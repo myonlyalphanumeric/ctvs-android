@@ -43,8 +43,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentType
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -226,7 +229,8 @@ fun LoginScreen(done: () -> Unit, back: () -> Unit) {
                     label = { Text("Nome utente o email") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
-                    modifier = Modifier.fillMaxWidth(),
+                    // Collegato ai password manager (autocompletamento di Android)
+                    modifier = Modifier.fillMaxWidth().semantics { contentType = ContentType.Username },
                 )
                 OutlinedTextField(
                     value = password,
@@ -239,7 +243,7 @@ fun LoginScreen(done: () -> Unit, back: () -> Unit) {
                     trailingIcon = {
                         TextButton(onClick = { showPassword = !showPassword }) { Text(if (showPassword) "Nascondi" else "Mostra") }
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().semantics { contentType = ContentType.Password },
                 )
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center) }
                 Button(
