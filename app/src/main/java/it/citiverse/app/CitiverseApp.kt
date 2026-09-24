@@ -28,6 +28,12 @@ class CitiverseApp : Application(), ImageLoaderFactory {
     /** Numero di notifiche non lette, per il pallino nella barra in basso. */
     val unreadCount = MutableStateFlow(0)
 
+    /** Cresce quando l'utente segue o smette di seguire una comunità: il feed "Seguite" si aggiorna. */
+    val followsVersion = MutableStateFlow(0)
+
+    /** Cresce quando si tocca di nuovo "Home" già aperta: il feed torna in cima. */
+    val homeReselect = MutableStateFlow(0)
+
     private val catLock = Mutex()
     private var catCache: List<Category>? = null
     private var catCacheAt = 0L

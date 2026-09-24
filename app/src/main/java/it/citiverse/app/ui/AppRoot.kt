@@ -100,7 +100,10 @@ fun AppRoot(pendingRoute: String?, onPendingConsumed: () -> Unit) {
                     TABS.forEach { tab ->
                         NavigationBarItem(
                             selected = current == tab.route,
-                            onClick = { navigate(tab.route) },
+                            onClick = {
+                                if (current == tab.route && tab.route == Routes.HOME) app.homeReselect.value++
+                                else navigate(tab.route)
+                            },
                             icon = {
                                 if (tab.route == Routes.NOTIFICATIONS && unread > 0) {
                                     BadgedBox(badge = { Badge { Text(if (unread > 99) "99+" else unread.toString()) } }) {

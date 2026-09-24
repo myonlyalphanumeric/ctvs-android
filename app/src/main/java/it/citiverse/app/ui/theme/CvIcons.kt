@@ -40,6 +40,7 @@ object CvIcons {
     val Clock = stroke("clock", "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z", "M12 7v5l3 2")
     val Fire = stroke("fire", "M12 21c-3.9 0-7-2.8-7-6.6 0-2.9 1.9-4.9 3.4-6.4.3 1.9 1.3 3 2.4 3.4C10.3 8 11.4 5 14 3c0 3.2 5 5.2 5 11.4 0 3.8-3.1 6.6-7 6.6Z")
     val Trend = stroke("trend", "M3 17l6-6 4 4 8-8", "M15 7h6v6")
+    val Star = stroke("star", "M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.3-4.1 5.9-.9Z")
     val Globe = stroke(
         "globe",
         "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z",

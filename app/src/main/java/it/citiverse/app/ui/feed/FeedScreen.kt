@@ -2,6 +2,7 @@ package it.citiverse.app.ui.feed
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -27,12 +28,16 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -90,13 +95,45 @@ class FeedViewModel(private val app: CitiverseApp) : ViewModel() {
     private val _communities = MutableStateFlow<CommunitiesRow?>(null)
     val communities: StateFlow<CommunitiesRow?> = _communities.asStateFlow()
 
+    /** C'è almeno una comunità seguita: compare la scheda "Seguite". */
+    private val _hasFollowed = MutableStateFlow(false)
+    val hasFollowed: StateFlow<Boolean> = _hasFollowed.asStateFlow()
+
+    /** Id delle comunità seguite, per il feed "Seguite" (?cid=…). */
+    private var watched: Set<String> = emptySet()
+
     private var job: Job? = null
+    private var startJob: Job? = null
     private var loadedFor: String? = null
 
     init {
-        load(reset = true)
-        loadCommunities()
+        start(chooseDefault = true)
     }
+
+    /**
+     * Prima legge le comunità seguite, poi carica il feed: con almeno una comunità
+     * seguita si parte da "Seguite", altrimenti da "Recenti".
+     */
+    private fun start(chooseDefault: Boolean, pull: Boolean = false) {
+        startJob?.cancel()
+        job?.cancel()
+        if (pull) _ui.update { it.copy(refreshing = true, error = null) }
+        startJob = viewModelScope.launch {
+            val me = app.prefs.me.value
+            watched = if (me == null) emptySet()
+            else runCatching { app.api.watchedCategoryIds(me.userslug) }.getOrNull() ?: watched
+            _hasFollowed.value = watched.isNotEmpty()
+            when {
+                chooseDefault -> _kind.value = if (watched.isNotEmpty()) FeedKind.FOLLOWED else FeedKind.RECENT
+                _kind.value == FeedKind.FOLLOWED && watched.isEmpty() -> _kind.value = FeedKind.RECENT
+            }
+            load(reset = true, pull = pull)
+            loadCommunities()
+        }
+    }
+
+    /** Dopo "Segui"/"Non seguire" su una comunità. */
+    fun onFollowsChanged() = start(chooseDefault = false)
 
     fun select(kind: FeedKind) {
         if (kind == _kind.value) return
@@ -110,15 +147,12 @@ class FeedViewModel(private val app: CitiverseApp) : ViewModel() {
         load(reset = true)
     }
 
-    fun refresh() {
-        load(reset = true, pull = true)
-        loadCommunities()
-    }
+    fun refresh() = start(chooseDefault = false, pull = true)
 
-    /** Se nel frattempo l'utente ha fatto login/logout, ricarica. */
+    /** Se nel frattempo l'utente ha fatto login/logout, ricarica partendo dalla scheda giusta. */
     fun onUserChanged(uid: String?) {
         val key = uid ?: "0"
-        if (loadedFor != null && loadedFor != key) refresh()
+        if (loadedFor != null && loadedFor != key) start(chooseDefault = true)
         loadedFor = key
     }
 
@@ -137,7 +171,8 @@ class FeedViewModel(private val app: CitiverseApp) : ViewModel() {
                 else it.copy(loadingMore = true, error = null)
             }
             try {
-                val res = app.api.feed(_kind.value, _term.value, page)
+                val cids = if (_kind.value == FeedKind.FOLLOWED) watched else emptySet()
+                val res = app.api.feed(_kind.value, _term.value, page, cids)
                 res.topics.forEach { t -> t.mainPid?.let { app.votes.seed(it, t.votes) } }
                 _ui.update {
                     val merged = if (reset) res.topics else (it.topics + res.topics).distinctBy { t -> t.tid }
@@ -153,8 +188,6 @@ class FeedViewModel(private val app: CitiverseApp) : ViewModel() {
         viewModelScope.launch {
             try {
                 val all = app.categories().filter { it.openableId != null && it.link.isNullOrBlank() }
-                val me = app.prefs.me.value
-                val watched = if (me != null) runCatching { app.api.watchedCategoryIds(me.userslug) }.getOrDefault(emptySet()) else emptySet()
                 val row = if (watched.isNotEmpty()) {
                     CommunitiesRow("Le tue comunità", all.filter { it.ref.cid in watched }.sortedByDescending { it.postCount }.take(20).map { it.ref })
                 } else {
@@ -181,12 +214,41 @@ fun FeedScreen(
     val kind by vm.kind.collectAsState()
     val term by vm.term.collectAsState()
     val communities by vm.communities.collectAsState()
+    val hasFollowed by vm.hasFollowed.collectAsState()
+    val followsVersion by app.followsVersion.collectAsState()
+    val homeReselect by app.homeReselect.collectAsState()
+    val haptic = LocalHapticFeedback.current
     val me by app.prefs.me.collectAsState()
     val votes by app.votes.states.collectAsState()
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
     LaunchedEffect(me?.uid) { vm.onUserChanged(me?.uid) }
+    // Il primo valore è quello già noto: si reagisce solo ai cambi successivi.
+    var seenFollows by remember { mutableIntStateOf(followsVersion) }
+    LaunchedEffect(followsVersion) {
+        if (followsVersion != seenFollows) {
+            seenFollows = followsVersion
+            vm.onFollowsChanged()
+        }
+    }
+    var seenReselect by remember { mutableIntStateOf(homeReselect) }
+    LaunchedEffect(homeReselect) {
+        if (homeReselect != seenReselect) {
+            seenReselect = homeReselect
+            listState.animateScrollToItem(0)
+        }
+    }
+
+    fun pick(k: FeedKind) {
+        if (k == kind) {
+            // Tocco sulla scheda già scelta: torna in cima.
+            scope.launch { listState.animateScrollToItem(0) }
+        } else {
+            vm.select(k)
+            scope.launch { listState.scrollToItem(0) }
+        }
+    }
 
     val nearEnd by remember {
         derivedStateOf {
@@ -203,6 +265,7 @@ fun FeedScreen(
             navigate(Routes.LOGIN)
             return
         }
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         scope.launch { app.votes.toggle(pid, up).onFailure { toast(ctx, it.message ?: "Voto non riuscito") } }
     }
 
@@ -214,6 +277,7 @@ fun FeedScreen(
             iconBg = me?.iconBg,
             onLogin = { navigate(Routes.LOGIN) },
             onProfile = { navigate(Routes.SETTINGS) },
+            onTitle = { scope.launch { listState.animateScrollToItem(0) } },
         )
         PullToRefreshBox(
             isRefreshing = ui.refreshing,
@@ -228,12 +292,15 @@ fun FeedScreen(
             ) {
                 item(key = "tabs") {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        item { TabPill("Recenti", CvIcons.Clock, kind == FeedKind.RECENT) { vm.select(FeedKind.RECENT) } }
-                        item { TabPill("Popolari", CvIcons.Fire, kind == FeedKind.POPULAR) { vm.select(FeedKind.POPULAR) } }
-                        item { TabPill("Più votati", CvIcons.Trend, kind == FeedKind.TOP) { vm.select(FeedKind.TOP) } }
+                        if (hasFollowed) {
+                            item { TabPill("Seguite", CvIcons.Star, kind == FeedKind.FOLLOWED) { pick(FeedKind.FOLLOWED) } }
+                        }
+                        item { TabPill("Recenti", CvIcons.Clock, kind == FeedKind.RECENT) { pick(FeedKind.RECENT) } }
+                        item { TabPill("Popolari", CvIcons.Fire, kind == FeedKind.POPULAR) { pick(FeedKind.POPULAR) } }
+                        item { TabPill("Più votati", CvIcons.Trend, kind == FeedKind.TOP) { pick(FeedKind.TOP) } }
                     }
                 }
-                if (kind != FeedKind.RECENT) {
+                if (kind == FeedKind.POPULAR || kind == FeedKind.TOP) {
                     item(key = "terms") {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             items(FeedTerm.entries) { t ->
@@ -263,7 +330,12 @@ fun FeedScreen(
                 when {
                     ui.loading && ui.topics.isEmpty() -> item(key = "loading") { LoadingBox() }
                     ui.error != null && ui.topics.isEmpty() -> item(key = "error") { ErrorBox(ui.error!!, onRetry = { vm.refresh() }) }
-                    !ui.loading && ui.topics.isEmpty() -> item(key = "empty") { EmptyBox("Nessuna discussione qui, per ora.") }
+                    !ui.loading && ui.topics.isEmpty() -> item(key = "empty") {
+                        EmptyBox(
+                            if (kind == FeedKind.FOLLOWED) "Nelle comunità che segui non c'è ancora niente: prova \"Recenti\"."
+                            else "Nessuna discussione qui, per ora."
+                        )
+                    }
                 }
                 items(ui.topics, key = { "t:" + it.tid }) { t ->
                     val pid = t.mainPid
@@ -300,6 +372,7 @@ private fun HomeTopBar(
     iconBg: String?,
     onLogin: () -> Unit,
     onProfile: () -> Unit,
+    onTitle: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
@@ -311,7 +384,13 @@ private fun HomeTopBar(
             fontSize = 24.sp,
             fontWeight = FontWeight.ExtraBold,
             letterSpacing = (-0.5).sp,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onTitle,
+                ),
         )
         if (loggedIn) {
             Row(Modifier.clip(CircleShape).clickable(onClick = onProfile).padding(4.dp)) {

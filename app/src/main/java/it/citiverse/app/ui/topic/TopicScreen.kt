@@ -53,7 +53,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -220,6 +222,7 @@ class TopicViewModel(
 @Composable
 fun TopicScreen(tid: String?, pid: String?, navigate: (String) -> Unit, back: () -> Unit) {
     val ctx = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val app = ctx.applicationContext as CitiverseApp
     val vm = appViewModel(key = "topic:$tid:$pid") { TopicViewModel(it, tid, pid) }
     val ui by vm.ui.collectAsState()
@@ -254,6 +257,7 @@ fun TopicScreen(tid: String?, pid: String?, navigate: (String) -> Unit, back: ()
 
     fun vote(p: Post, up: Boolean) {
         if (me == null) return navigate(Routes.LOGIN)
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         scope.launch { app.votes.toggle(p.pid, up).onFailure { toast(ctx, it.message ?: "Voto non riuscito") } }
     }
 

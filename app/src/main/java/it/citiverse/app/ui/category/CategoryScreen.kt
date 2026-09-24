@@ -52,7 +52,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -154,6 +156,7 @@ class CategoryViewModel(private val app: CitiverseApp, private val id: String) :
             try {
                 app.api.setCategoryWatched(cid, next)
                 _ui.update { it.copy(watchBusy = false) }
+                app.followsVersion.value++
             } catch (e: Exception) {
                 _ui.update { it.copy(watched = !next, watchBusy = false) }
                 onError(e.message ?: "Operazione non riuscita")
@@ -166,6 +169,7 @@ class CategoryViewModel(private val app: CitiverseApp, private val id: String) :
 @Composable
 fun CategoryScreen(id: String, navigate: (String) -> Unit, back: () -> Unit) {
     val ctx = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val app = ctx.applicationContext as CitiverseApp
     val vm = appViewModel(key = "cat:$id") { CategoryViewModel(it, id) }
     val ui by vm.ui.collectAsState()
@@ -187,6 +191,7 @@ fun CategoryScreen(id: String, navigate: (String) -> Unit, back: () -> Unit) {
     fun vote(t: Topic, up: Boolean) {
         val pid = t.mainPid ?: return
         if (me == null) return navigate(Routes.LOGIN)
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         scope.launch { app.votes.toggle(pid, up).onFailure { toast(ctx, it.message ?: "Voto non riuscito") } }
     }
 

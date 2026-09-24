@@ -20,6 +20,8 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 enum class FeedKind(val path: String, val label: String) {
+    /** Discussioni recenti delle sole comunità seguite (stessa pagina /api/recent, filtrata per cid). */
+    FOLLOWED("recent", "Seguite"),
     RECENT("recent", "Recenti"),
     POPULAR("popular", "Popolari"),
     TOP("top", "Più votati"),
@@ -289,10 +291,14 @@ class NodeBBApi(val cookies: PersistentCookieJar) {
         return TopicPage(topics, current, count)
     }
 
-    suspend fun feed(kind: FeedKind, term: FeedTerm?, page: Int): TopicPage {
+    /** [cids]: se non vuoto, solo le discussioni di queste comunità (?cid=1&cid=2…). */
+    suspend fun feed(kind: FeedKind, term: FeedTerm?, page: Int, cids: Collection<String> = emptyList()): TopicPage {
         val q = mutableMapOf<String, String?>("page" to page.toString())
-        if (kind != FeedKind.RECENT && term != null) q["term"] = term.key
-        return topicPage(getRead(url("api", kind.path, query = q)), page)
+        if (kind != FeedKind.RECENT && kind != FeedKind.FOLLOWED && term != null) q["term"] = term.key
+        val u = url("api", kind.path, query = q).newBuilder()
+            .apply { cids.forEach { addQueryParameter("cid", it) } }
+            .build()
+        return topicPage(getRead(u), page)
     }
 
     suspend fun allCategories(): List<Category> {
