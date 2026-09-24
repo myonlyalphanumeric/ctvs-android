@@ -58,6 +58,14 @@ private val KNOWN_ERRORS = mapOf(
     "no-privileges" to "Non hai i permessi per questa azione.",
 )
 
+/**
+ * Risposta di /api/notifications subito dopo una password accettata.
+ * Il plugin 2factor risponde 401 con code "not-authorised" e un messaggio già tradotto nella
+ * lingua del forum ("È richiesta l'autenticazione a due fattori…"), mai con la chiave
+ * "second-factor-required": dopo un login riuscito, un 401 vuol dire solo 2FA in sospeso.
+ */
+internal fun isSecondFactorPending(code: Int): Boolean = code == 401
+
 class NodeBBApi(val cookies: PersistentCookieJar) {
 
     private val userAgent = "CitiverseAndroid/${BuildConfig.VERSION_NAME} (Android ${android.os.Build.VERSION.RELEASE})"
@@ -199,10 +207,10 @@ class NodeBBApi(val cookies: PersistentCookieJar) {
         return LoginResult.Done(finishLogin())
     }
 
-    /** Con la 2FA in sospeso le pagine rispondono 401 "[[2factor:second-factor-required]]". */
+    /** Con la 2FA in sospeso /api/config dice già loggedIn, ma le pagine dell'utente rispondono 401. */
     private suspend fun needsSecondFactor(): Boolean {
-        val (code, body) = execute(Request.Builder().url(url("api", "notifications")).header("Accept", "application/json").build())
-        return code == 401 && body.contains("second-factor-required")
+        val (code, _) = execute(Request.Builder().url(url("api", "notifications")).header("Accept", "application/json").build())
+        return isSecondFactorPending(code)
     }
 
     private suspend fun finishLogin(): Me {
