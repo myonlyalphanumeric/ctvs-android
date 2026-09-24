@@ -39,7 +39,7 @@ object NotifText {
                 if (template == null) {
                     args.joinToString(" · ").ifBlank { key.replace('-', ' ') }
                 } else {
-                    var out = template
+                    var out: String = template
                     // dal più alto al più basso, così %1 non tocca %10
                     for (i in args.indices.reversed()) out = out.replace("%${i + 1}", args[i])
                     out
