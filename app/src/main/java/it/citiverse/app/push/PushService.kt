@@ -226,7 +226,7 @@ class PushService : Service(), SocketClient.Listener {
                 data.unreadCount?.let { app.unreadCount.value = it }
                 val item = data.notification?.let { NotificationItem.from(it) }
                 if (item == null) {
-                    Log.w(TAG, "notifica senza nid: ${args.firstOrNull().toString().take(300)}")
+                    Log.w(TAG, "notifica senza nid")
                     return
                 }
                 withWakeLock {

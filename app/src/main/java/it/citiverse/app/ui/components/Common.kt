@@ -404,9 +404,18 @@ fun shareLink(ctx: Context, title: String, url: String) {
     ctx.startActivity(Intent.createChooser(send, "Condividi").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
 }
 
+/** Schemi che si possono aprire da un link dei post (che può arrivare da qualunque istanza). */
+private val SAFE_SCHEMES = setOf("http", "https", "mailto")
+
 fun openExternal(ctx: Context, url: String) {
+    val uri = runCatching { Uri.parse(url) }.getOrNull()
+    if (uri?.scheme?.lowercase() !in SAFE_SCHEMES) {
+        // Niente "altraapp://…", "intent:", "file:": sul sito il browser chiederebbe conferma.
+        copyText(ctx, url, "Link non aperto per sicurezza, copiato negli appunti")
+        return
+    }
     try {
-        ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        ctx.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     } catch (_: ActivityNotFoundException) {
         Toast.makeText(ctx, url, Toast.LENGTH_LONG).show()
     }
