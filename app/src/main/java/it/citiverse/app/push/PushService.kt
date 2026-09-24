@@ -84,6 +84,7 @@ class PushService : Service(), SocketClient.Listener {
     private var connectJob: Job? = null
     private var attempt = 0
     private var lastAttemptAt = 0L
+    @Volatile private var sessionUid: String? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -197,9 +198,18 @@ class PushService : Service(), SocketClient.Listener {
     /* ---------- eventi del socket (arrivano dal thread di OkHttp) ---------- */
 
     override fun onConnected() {
+        sessionUid = null
         scope.launch {
             attempt = 0
             setStatus("Connesso · notifiche in tempo reale")
+            // NodeBB manda subito "checkSession" con l'uid: se non arriva, il server non ha
+            // riconosciuto l'accesso (per esempio verifica in due passaggi non completata).
+            launch {
+                delay(15_000)
+                if (socket.isConnected && sessionUid == null) {
+                    setStatus("Connesso, ma il server non riconosce l'accesso: esci e rientra")
+                }
+            }
             // Recupera quello che è arrivato mentre eravamo disconnessi.
             runCatching { Notifier.deliver(this@PushService, app.api.notifications(), live = false) }
         }
@@ -212,17 +222,27 @@ class PushService : Service(), SocketClient.Listener {
     override fun onEvent(name: String, args: List<JsonElement>) {
         when (name) {
             "event:new_notification" -> {
-                val obj = args.firstOrNull() as? JsonObject ?: return
-                val item = NotificationItem.from(obj) ?: return
+                val data = NodeBBEvents.newNotification(args.firstOrNull())
+                data.unreadCount?.let { app.unreadCount.value = it }
+                val item = data.notification?.let { NotificationItem.from(it) }
+                if (item == null) {
+                    Log.w(TAG, "notifica senza nid: ${args.firstOrNull().toString().take(300)}")
+                    return
+                }
                 withWakeLock {
                     scope.launch {
                         runCatching { Notifier.deliver(this@PushService, listOf(item), live = true) }
+                            .onFailure { Log.w(TAG, "notifica non mostrata", it) }
+                        if (data.unreadCount != null) app.unreadCount.value = data.unreadCount
                     }
                 }
             }
+            "event:notifications.updateCount" -> NodeBBEvents.count(args.firstOrNull())?.let { app.unreadCount.value = it }
+            "event:invalid_session" -> scope.launch { sessionExpired() }
             "checkSession" -> {
                 // NodeBB comunica l'uid della sessione del socket: 0 vuol dire non autenticato.
                 val uid = (args.firstOrNull() as? JsonPrimitive)?.content
+                sessionUid = uid
                 if (uid == "0" && app.prefs.me.value != null) scope.launch { sessionExpired() }
             }
             "event:logout" -> scope.launch { sessionExpired() }

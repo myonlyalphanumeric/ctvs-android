@@ -37,6 +37,27 @@ enum class FeedTerm(val key: String, val label: String) {
  * - lettura: /api/... (le stesse pagine del sito in JSON)
  * - scrittura: /api/v3/... (con il token CSRF della sessione nell'header x-csrf-token)
  */
+sealed class LoginResult {
+    data class Done(val me: Me) : LoginResult()
+
+    /** Password giusta, ma l'account chiede anche il codice della verifica in due passaggi. */
+    data object SecondFactor : LoginResult()
+}
+
+/** Chiavi di errore di NodeBB che conviene spiegare meglio. */
+private val KNOWN_ERRORS = mapOf(
+    "invalid-login-credentials" to "Nome utente o password errati.",
+    "invalid-username-or-password" to "Nome utente o password errati.",
+    "account-locked" to "Account bloccato temporaneamente per troppi tentativi: riprova più tardi.",
+    "second-factor-required" to "Serve il codice della verifica in due passaggi.",
+    "email-not-confirmed" to "Devi prima confermare l'indirizzo email.",
+    "user-banned" to "Questo account è sospeso.",
+    "too-many-posts" to "Stai scrivendo troppo in fretta: aspetta qualche secondo.",
+    "content-too-short" to "Il testo è troppo corto.",
+    "title-too-short" to "Il titolo è troppo corto.",
+    "no-privileges" to "Non hai i permessi per questa azione.",
+)
+
 class NodeBBApi(val cookies: PersistentCookieJar) {
 
     private val userAgent = "CitiverseAndroid/${BuildConfig.VERSION_NAME} (Android ${android.os.Build.VERSION.RELEASE})"
@@ -62,6 +83,9 @@ class NodeBBApi(val cookies: PersistentCookieJar) {
         .pingInterval(0, TimeUnit.MILLISECONDS)
         .build()
 
+    /** Per il secondo passo della 2FA: serve leggere il redirect, non seguirlo. */
+    private val noRedirectHttp: OkHttpClient = http.newBuilder().followRedirects(false).followSslRedirects(false).build()
+
     private val json = "application/json; charset=utf-8".toMediaType()
     private val csrfLock = Mutex()
 
@@ -86,8 +110,11 @@ class NodeBBApi(val cookies: PersistentCookieJar) {
     private fun parseObj(body: String): JsonObject =
         runCatching { JsonParser.parseToJsonElement(body).jsonObject }.getOrElse { JsonObject(emptyMap()) }
 
-    private fun errorMessage(code: Int, body: JsonObject): String {
+    private fun errorMessage(code: Int, body: JsonObject, raw: String = ""): String {
+        // A volte NodeBB risponde con testo semplice, per esempio "[[error:invalid-login-credentials]]".
         val msg = body.obj("status")?.str("message") ?: body.str("error") ?: body.str("message")
+            ?: raw.trim().takeIf { it.startsWith("[[") && it.length < 200 }
+        KNOWN_ERRORS.entries.firstOrNull { msg?.contains(it.key) == true }?.let { return it.value }
         return when {
             !msg.isNullOrBlank() && !msg.startsWith("[[") -> msg
             code == 401 || code == 403 -> "Non hai i permessi per questa azione, oppure la sessione è scaduta."
@@ -102,7 +129,7 @@ class NodeBBApi(val cookies: PersistentCookieJar) {
     suspend fun getRead(u: HttpUrl): JsonObject {
         val (code, body) = execute(Request.Builder().url(u).header("Accept", "application/json").build())
         val obj = parseObj(body)
-        if (code !in 200..299) throw ApiException(errorMessage(code, obj), code)
+        if (code !in 200..299) throw ApiException(errorMessage(code, obj, body), code)
         return obj
     }
 
@@ -123,7 +150,7 @@ class NodeBBApi(val cookies: PersistentCookieJar) {
             csrf = null
             return v3(method, u, body, retry = false)
         }
-        if (code !in 200..299) throw ApiException(errorMessage(code, obj), code)
+        if (code !in 200..299) throw ApiException(errorMessage(code, obj, text), code)
         return obj.obj("response") ?: JsonObject(emptyMap())
     }
 
@@ -151,7 +178,12 @@ class NodeBBApi(val cookies: PersistentCookieJar) {
         csrf = null
     }
 
-    suspend fun login(username: String, password: String): Me {
+    /**
+     * Primo passo del login (nome utente e password).
+     * Se l'account ha la verifica in due passaggi (plugin 2factor di NodeBB) la sessione
+     * resta "a metà" finché non si invia il codice con [submitSecondFactor].
+     */
+    suspend fun login(username: String, password: String): LoginResult {
         cookies.clear()
         csrf = null
         v3(
@@ -163,9 +195,53 @@ class NodeBBApi(val cookies: PersistentCookieJar) {
         )
         // Dopo il login la sessione cambia: serve un token CSRF nuovo.
         csrf = null
+        if (needsSecondFactor()) return LoginResult.SecondFactor
+        return LoginResult.Done(finishLogin())
+    }
+
+    /** Con la 2FA in sospeso le pagine rispondono 401 "[[2factor:second-factor-required]]". */
+    private suspend fun needsSecondFactor(): Boolean {
+        val (code, body) = execute(Request.Builder().url(url("api", "notifications")).header("Accept", "application/json").build())
+        return code == 401 && body.contains("second-factor-required")
+    }
+
+    private suspend fun finishLogin(): Me {
+        csrf = null
         val info = config()
         if (!info.loggedIn || info.uid == "0") throw ApiException("Accesso non riuscito: controlla nome utente e password.")
         return me(info.uid)
+    }
+
+    /**
+     * Secondo passo: codice a 6 cifre dell'app di autenticazione (TOTP) o codice di backup.
+     * È lo stesso modulo della pagina /login/2fa/totp del sito: se il codice è giusto il server
+     * reindirizza alla home, altrimenti di nuovo alla pagina del codice.
+     */
+    suspend fun submitSecondFactor(code: String, backup: Boolean): Me {
+        val token = csrfToken()
+        val path = if (backup) "backup" else "totp"
+        val form = okhttp3.FormBody.Builder()
+            .add("code", code.filterNot { it.isWhitespace() })
+            .apply { if (token != null) add("_csrf", token) }
+            .build()
+        val req = Request.Builder().url(url("login", "2fa", path))
+            .apply { if (token != null) header("x-csrf-token", token) }
+            .post(form)
+            .build()
+        val location = withContext(Dispatchers.IO) {
+            try {
+                noRedirectHttp.newCall(req).execute().use { res ->
+                    if (res.code == 429) throw ApiException("Troppi tentativi: aspetta qualche secondo e riprova.", 429)
+                    res.header("Location") ?: ""
+                }
+            } catch (e: IOException) {
+                throw ApiException("Connessione non riuscita. Controlla la rete e riprova.")
+            }
+        }
+        if (location.contains("/login/2fa") || needsSecondFactor()) {
+            throw ApiException(if (backup) "Codice di backup non valido." else "Codice non valido o scaduto: riprova con quello nuovo.")
+        }
+        return finishLogin()
     }
 
     suspend fun me(uid: String): Me {

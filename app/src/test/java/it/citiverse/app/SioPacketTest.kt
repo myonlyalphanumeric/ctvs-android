@@ -1,5 +1,7 @@
 package it.citiverse.app
 
+import it.citiverse.app.data.NotificationItem
+import it.citiverse.app.push.NodeBBEvents
 import it.citiverse.app.push.SioPacket
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -36,6 +38,27 @@ class SioPacketTest {
         val p = SioPacket.parse("""42["event:new_notification",{"nid":"new_post:tid:5","type":"new-reply","tid":5}]""") as SioPacket.Event
         assertEquals("event:new_notification", p.name)
         assertEquals("new-reply", ((p.args[0] as JsonObject)["type"] as JsonPrimitive).content)
+    }
+
+    @Test
+    fun nodebb4WrappedNotification() {
+        // da NodeBB 4: emit('event:new_notification', { notification, unreadCount })
+        val p = SioPacket.parse(
+            """42["event:new_notification",{"notification":{"nid":"new_post:tid:5:pid:9:uid:3","type":"new-reply","tid":5,"pid":9,"bodyShort":"[[notifications:user-posted-to, Mario, Ciao]]","path":"/post/9","datetime":1790000000000},"unreadCount":3}]"""
+        ) as SioPacket.Event
+        val data = NodeBBEvents.newNotification(p.args[0])
+        assertEquals(3, data.unreadCount)
+        val item = NotificationItem.from(data.notification!!)!!
+        assertEquals("new_post:tid:5:pid:9:uid:3", item.nid)
+        assertEquals("5", item.tid)
+        assertEquals("9", item.pid)
+    }
+
+    @Test
+    fun legacyBareNotification() {
+        val p = SioPacket.parse("""42["event:new_notification",{"nid":"abc","type":"mention"}]""") as SioPacket.Event
+        val data = NodeBBEvents.newNotification(p.args[0])
+        assertEquals("abc", NotificationItem.from(data.notification!!)!!.nid)
     }
 
     @Test

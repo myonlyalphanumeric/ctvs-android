@@ -225,3 +225,22 @@ class SocketClient(
         acks.clear()
     }
 }
+
+/** Lettura dei dati degli eventi di NodeBB (senza dipendenze Android, per i test). */
+object NodeBBEvents {
+    data class NewNotification(val notification: JsonObject?, val unreadCount: Int?)
+
+    /**
+     * "event:new_notification": da NodeBB 4 il dato è { notification, unreadCount },
+     * nelle versioni precedenti era direttamente la notifica.
+     */
+    fun newNotification(arg: JsonElement?): NewNotification {
+        val obj = arg as? JsonObject ?: return NewNotification(null, null)
+        val wrapped = obj["notification"] as? JsonObject
+        val count = (obj["unreadCount"] as? JsonPrimitive)?.content?.toIntOrNull()
+        return if (wrapped != null) NewNotification(wrapped, count) else NewNotification(obj, count)
+    }
+
+    /** "event:notifications.updateCount": numero di notifiche non lette. */
+    fun count(arg: JsonElement?): Int? = (arg as? JsonPrimitive)?.content?.toIntOrNull()
+}

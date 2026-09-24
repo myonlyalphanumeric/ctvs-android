@@ -27,6 +27,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -57,6 +58,8 @@ import androidx.compose.ui.unit.sp
 import it.citiverse.app.CitiverseApp
 import it.citiverse.app.R
 import it.citiverse.app.data.BASE_URL
+import it.citiverse.app.data.LoginResult
+import it.citiverse.app.data.Me
 import it.citiverse.app.push.PushController
 import it.citiverse.app.ui.components.openExternal
 import it.citiverse.app.ui.theme.Brand
@@ -74,11 +77,28 @@ fun LoginScreen(done: () -> Unit, back: () -> Unit) {
     var showPassword by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    // Secondo passo per gli account con verifica in due passaggi
+    var needsCode by rememberSaveable { mutableStateOf(false) }
+    var code by remember { mutableStateOf("") }
+    var useBackup by remember { mutableStateOf(false) }
 
     // Dopo il login chiediamo il permesso per le notifiche (Android 13+), poi si torna indietro.
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         PushController.apply(ctx)
         done()
+    }
+
+    fun loggedIn(me: Me) {
+        app.resetUserData()
+        app.prefs.setMe(me)
+        password = ""
+        code = ""
+        if (Build.VERSION.SDK_INT >= 33) {
+            permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            PushController.apply(ctx)
+            done()
+        }
     }
 
     fun submit() {
@@ -87,18 +107,31 @@ fun LoginScreen(done: () -> Unit, back: () -> Unit) {
         error = null
         scope.launch {
             try {
-                val me = app.api.login(username.trim(), password)
-                app.resetUserData()
-                app.prefs.setMe(me)
-                password = ""
-                if (Build.VERSION.SDK_INT >= 33) {
-                    permission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                } else {
-                    PushController.apply(ctx)
-                    done()
+                when (val r = app.api.login(username.trim(), password)) {
+                    is LoginResult.Done -> loggedIn(r.me)
+                    LoginResult.SecondFactor -> {
+                        needsCode = true
+                        password = ""
+                    }
                 }
             } catch (e: Exception) {
                 error = e.message ?: "Accesso non riuscito"
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    fun submitCode() {
+        if (busy || code.isBlank()) return
+        busy = true
+        error = null
+        scope.launch {
+            try {
+                loggedIn(app.api.submitSecondFactor(code, useBackup))
+            } catch (e: Exception) {
+                code = ""
+                error = e.message ?: "Codice non valido"
             } finally {
                 busy = false
             }
@@ -131,42 +164,96 @@ fun LoginScreen(done: () -> Unit, back: () -> Unit) {
                 contentDescription = null,
                 modifier = Modifier.size(80.dp).clip(RoundedCornerShape(22.dp)).background(Brand),
             )
-            Text("Accedi a Citiverse", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Cv.colors.text)
-            Text(
-                "La città dei social liberi. Usa lo stesso account del sito.",
-                color = Cv.colors.muted, textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(4.dp))
-            OutlinedTextField(
-                value = username,
-                onValueChange = { username = it },
-                label = { Text("Nome utente o email") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedTextField(
-                value = password,
-                onValueChange = { password = it },
-                label = { Text("Password") },
-                singleLine = true,
-                visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { submit() }),
-                trailingIcon = {
-                    TextButton(onClick = { showPassword = !showPassword }) { Text(if (showPassword) "Nascondi" else "Mostra") }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center) }
-            Button(
-                onClick = { submit() },
-                enabled = !busy && username.isNotBlank() && password.isNotEmpty(),
-                modifier = Modifier.fillMaxWidth().height(50.dp),
-                shape = RoundedCornerShape(25.dp),
-            ) {
-                if (busy) CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
-                else Text("Accedi", fontWeight = FontWeight.SemiBold)
+            if (needsCode) {
+                Text("Verifica in due passaggi", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Cv.colors.text)
+                Text(
+                    if (useBackup) "Inserisci uno dei codici di backup che hai salvato quando hai attivato la verifica."
+                    else "Apri l'app di autenticazione (Aegis, FreeOTP, Google Authenticator…) e inserisci il codice a 6 cifre di Citiverse.",
+                    color = Cv.colors.muted, textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(4.dp))
+                OutlinedTextField(
+                    value = code,
+                    onValueChange = { v ->
+                        code = if (useBackup) v.trim() else v.filter { it.isDigit() }.take(6)
+                        // con 6 cifre il codice TOTP parte da solo
+                        if (!useBackup && code.length == 6) submitCode()
+                    },
+                    label = { Text(if (useBackup) "Codice di backup" else "Codice a 6 cifre") },
+                    singleLine = true,
+                    textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Center, fontSize = 22.sp, letterSpacing = 4.sp),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = if (useBackup) KeyboardType.Ascii else KeyboardType.NumberPassword,
+                        imeAction = ImeAction.Done,
+                    ),
+                    keyboardActions = KeyboardActions(onDone = { submitCode() }),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center) }
+                Button(
+                    onClick = { submitCode() },
+                    enabled = !busy && code.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    shape = RoundedCornerShape(25.dp),
+                ) {
+                    if (busy) CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                    else Text("Verifica", fontWeight = FontWeight.SemiBold)
+                }
+                TextButton(onClick = {
+                    useBackup = !useBackup
+                    code = ""
+                    error = null
+                }) {
+                    Text(if (useBackup) "Usa il codice dell'app di autenticazione" else "Non hai il telefono? Usa un codice di backup")
+                }
+                TextButton(onClick = {
+                    needsCode = false
+                    code = ""
+                    error = null
+                    scope.launch { app.api.logout() }
+                }) { Text("Annulla e torna al login") }
+                Text(
+                    "Le chiavi di sicurezza (passkey/WebAuthn) per ora non sono supportate dall'app.",
+                    color = Cv.colors.muted, fontSize = 12.sp, textAlign = TextAlign.Center,
+                )
+            } else {
+                Text("Accedi a Citiverse", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Cv.colors.text)
+                Text(
+                    "La città dei social liberi. Usa lo stesso account del sito.",
+                    color = Cv.colors.muted, textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(4.dp))
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = { username = it },
+                    label = { Text("Nome utente o email") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Password") },
+                    singleLine = true,
+                    visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { submit() }),
+                    trailingIcon = {
+                        TextButton(onClick = { showPassword = !showPassword }) { Text(if (showPassword) "Nascondi" else "Mostra") }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center) }
+                Button(
+                    onClick = { submit() },
+                    enabled = !busy && username.isNotBlank() && password.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    shape = RoundedCornerShape(25.dp),
+                ) {
+                    if (busy) CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                    else Text("Accedi", fontWeight = FontWeight.SemiBold)
+                }
             }
             TextButton(onClick = { openExternal(ctx, "$BASE_URL/register") }) {
                 Text("Non hai un account? Registrati sul sito")
