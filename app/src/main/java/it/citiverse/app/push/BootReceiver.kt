@@ -1,0 +1,14 @@
+package it.citiverse.app.push
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+
+/** Riavvia le notifiche dopo l'accensione del telefono o un aggiornamento dell'app. */
+class BootReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        when (intent.action) {
+            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> PushController.apply(context)
+        }
+    }
+}

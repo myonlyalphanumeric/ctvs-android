@@ -1,0 +1,12 @@
+.gradle/
+build/
+/local.properties
+/.idea/
+*.iml
+.DS_Store
+/captures
+.externalNativeBuild/
+.cxx/
+# chiavi di firma vere: mai nel repository
+release.keystore
+*.jks
