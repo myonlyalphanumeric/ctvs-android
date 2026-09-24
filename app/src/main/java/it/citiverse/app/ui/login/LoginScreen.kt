@@ -5,7 +5,6 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -44,7 +43,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -62,7 +60,6 @@ import it.citiverse.app.data.LoginResult
 import it.citiverse.app.data.Me
 import it.citiverse.app.push.PushController
 import it.citiverse.app.ui.components.openExternal
-import it.citiverse.app.ui.theme.Brand
 import it.citiverse.app.ui.theme.Cv
 import kotlinx.coroutines.launch
 
@@ -158,11 +155,11 @@ fun LoginScreen(done: () -> Unit, back: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            // painterResource non legge le icone adattive: usiamo il primo piano su sfondo del marchio
+            // Logo del sito (painterResource non legge le icone adattive né gli <inset>)
             Image(
-                painterResource(R.drawable.ic_launcher_foreground),
+                painterResource(R.drawable.citiverse_logo),
                 contentDescription = null,
-                modifier = Modifier.size(80.dp).clip(RoundedCornerShape(22.dp)).background(Brand),
+                modifier = Modifier.size(88.dp),
             )
             if (needsCode) {
                 Text("Verifica in due passaggi", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Cv.colors.text)
