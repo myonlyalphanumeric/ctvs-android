@@ -1,0 +1,22 @@
+# Aggiornamenti automatici: ogni settimana GitHub apre una PR per le librerie
+# (Gradle) e per le azioni del workflow che hanno una versione nuova.
+# La build di Actions controlla ogni PR prima che venga unita.
+version: 2
+updates:
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      # Librerie che vanno aggiornate insieme
+      androidx:
+        patterns: ["androidx.*"]
+      kotlin:
+        patterns: ["org.jetbrains.kotlin.*"]
+      kotlinx:
+        patterns: ["org.jetbrains.kotlinx*"]
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

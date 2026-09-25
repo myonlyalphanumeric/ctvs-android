@@ -2,7 +2,8 @@ name: Build APK
 
 on:
   push:
-    branches: ['**']
+    # I branch di Dependabot vengono compilati dalla loro PR, senza pubblicare release.
+    branches: ['**', '!dependabot/**']
     tags: ['v*']
   pull_request:
   workflow_dispatch:
