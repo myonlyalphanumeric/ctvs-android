@@ -1,0 +1,32 @@
+Citiverse è l'app per citiverse.it, "la città dei social liberi": un forum italiano fatto di comunità locali e tematiche, collegato al fediverso.
+
+<b>Il tuo feed, come piace a te</b>
+• "Seguite": le discussioni delle comunità che segui, in cima a tutto
+• Recenti, Popolari e Più votati, per oggi, la settimana, il mese o da sempre
+• Voti con un tocco, commenti, condivisione
+
+<b>Comunità</b>
+• Trova una comunità per nome, città o argomento
+• Seguila con un tocco, anche dal fediverso (Mastodon e simili) con il suo indirizzo @comunità@citiverse.it
+• Apri nuove discussioni con un editor semplice: grassetto, corsivo, titoli, elenchi, citazioni e link con i pulsanti, senza dover conoscere il Markdown
+
+<b>Discussioni leggibili</b>
+• Testo grande e pulito, risposte ordinate
+• Si vede subito chi ha aperto la discussione e chi scrive da altre istanze del fediverso
+• I link a citiverse.it si aprono direttamente nell'app
+
+<b>Notifiche senza Google</b>
+Le notifiche arrivano senza Google Play Services: l'app tiene aperta una connessione diretta con citiverse.it, come fanno Signal e Molly. In alternativa puoi scegliere il controllo ogni 15 minuti, che consuma meno. Risposte, menzioni, voti, chat e nuovi follower hanno canali separati, che puoi regolare uno per uno.
+
+<b>Privacy</b>
+• Nessuna pubblicità, nessun tracciamento, nessuna libreria di analisi
+• L'app parla solo con citiverse.it (più i siti delle immagini presenti nei post)
+• La password non viene salvata: resta sul telefono solo il cookie di sessione, come nel browser
+• Supporto alla verifica in due passaggi e ai password manager
+
+<b>Una comunità sana</b>
+Da ogni post puoi segnalare contenuti o utenti ai moderatori e bloccare chi non vuoi più leggere.
+
+Tema chiaro e scuro, tutto in italiano.
+
+Citiverse è un progetto di Le Alternative.
