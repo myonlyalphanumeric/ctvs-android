@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -31,8 +30,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import it.citiverse.app.CitiverseApp
+import it.citiverse.app.ui.components.MarkdownEditor
 import it.citiverse.app.ui.components.toast
 import it.citiverse.app.ui.theme.Cv
 import kotlinx.coroutines.launch
@@ -44,7 +46,8 @@ fun NewTopicScreen(cid: String, openTopic: (String) -> Unit, back: () -> Unit) {
     val app = ctx.applicationContext as CitiverseApp
     val scope = rememberCoroutineScope()
     var title by rememberSaveable { mutableStateOf("") }
-    var body by rememberSaveable { mutableStateOf("") }
+    // TextFieldValue: servono anche la selezione e il cursore per i pulsanti di formattazione.
+    var body by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
     var busy by remember { mutableStateOf(false) }
 
     fun submit() {
@@ -52,7 +55,7 @@ fun NewTopicScreen(cid: String, openTopic: (String) -> Unit, back: () -> Unit) {
         busy = true
         scope.launch {
             try {
-                val tid = app.api.newTopic(cid, title.trim(), body.trim())
+                val tid = app.api.newTopic(cid, title.trim(), body.text.trim())
                 openTopic(tid)
             } catch (e: Exception) {
                 toast(ctx, e.message ?: "Pubblicazione non riuscita")
@@ -71,7 +74,7 @@ fun NewTopicScreen(cid: String, openTopic: (String) -> Unit, back: () -> Unit) {
                 actions = {
                     Button(
                         onClick = { submit() },
-                        enabled = !busy && title.isNotBlank() && body.isNotBlank(),
+                        enabled = !busy && title.isNotBlank() && body.text.isNotBlank(),
                         modifier = Modifier.padding(end = 8.dp),
                     ) {
                         if (busy) CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
@@ -98,15 +101,16 @@ fun NewTopicScreen(cid: String, openTopic: (String) -> Unit, back: () -> Unit) {
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            OutlinedTextField(
+            MarkdownEditor(
                 value = body,
                 onValueChange = { body = it },
-                label = { Text("Testo (Markdown)") },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 220.dp),
+                placeholder = "Scrivi qui il testo…",
+                modifier = Modifier.fillMaxWidth(),
             )
             Text(
-                "Il testo si formatta con Markdown: **grassetto**, *corsivo*, [link](https://…), > citazione.",
+                "Seleziona del testo e usa i pulsanti per formattarlo. Chi conosce il Markdown può anche scriverlo a mano.",
                 color = Cv.colors.muted,
+                fontSize = 13.sp,
             )
         }
     }
