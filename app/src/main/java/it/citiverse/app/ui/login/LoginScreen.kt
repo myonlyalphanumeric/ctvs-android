@@ -262,6 +262,15 @@ fun LoginScreen(done: () -> Unit, back: () -> Unit) {
             TextButton(onClick = { openExternal(ctx, "$BASE_URL/reset") }) {
                 Text("Password dimenticata?")
             }
+            // Google Play: chi pubblica contenuti deve accettare le regole della comunità.
+            TextButton(onClick = { openExternal(ctx, "$BASE_URL/tos") }) {
+                Text(
+                    "Accedendo accetti il regolamento di Citiverse",
+                    color = Cv.colors.muted,
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
     }
 }

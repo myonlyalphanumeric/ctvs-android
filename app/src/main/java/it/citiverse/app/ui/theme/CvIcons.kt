@@ -61,6 +61,14 @@ object CvIcons {
     val Folder = stroke("folder", "M3.5 6.5h6l2 2h9v10h-17Z")
     val External = stroke("external", "M14 4h6v6", "M20 4l-9 9", "M18 14v5.5H4.5V6H10")
     val Battery = stroke("battery", "M4 7h14v10H4Z", "M21 10.5v3")
+    val More = stroke(
+        "more",
+        "M5 10.6a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 1 0 0-2.8Z",
+        "M12 10.6a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 1 0 0-2.8Z",
+        "M19 10.6a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 1 0 0-2.8Z",
+        filled = true,
+    )
+
     // Barra di formattazione dell'editor
     val ListBullet = stroke("listBullet", "M9 6.5h11", "M9 12h11", "M9 17.5h11", "M4.5 6.5h.01", "M4.5 12h.01", "M4.5 17.5h.01")
     val ListNumber = stroke("listNumber", "M10 6.5h10", "M10 12h10", "M10 17.5h10", "M4 5l1.5-1v5", "M3.5 15.5a1.3 1.3 0 0 1 2.4.7c0 .9-2.4 2.3-2.4 2.3h2.6")

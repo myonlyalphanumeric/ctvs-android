@@ -410,6 +410,45 @@ class NodeBBApi(val cookies: PersistentCookieJar) {
         if (follow) v3("PUT", u) else v3("DELETE", u)
     }
 
+    /* ---------- moderazione: segnalazioni e blocco ---------- */
+
+    /** Segnala un post o un utente ai moderatori (POST /api/v3/flags). */
+    suspend fun flag(type: String, id: String, reason: String) {
+        v3(
+            "POST", url("api", "v3", "flags"),
+            buildJsonObject {
+                put("type", type)
+                // Gli id locali sono numeri, quelli del fediverso stringhe (URL).
+                put("id", id.toLongOrNull()?.let { kotlinx.serialization.json.JsonPrimitive(it) } ?: kotlinx.serialization.json.JsonPrimitive(id))
+                put("reason", reason)
+            },
+        )
+    }
+
+    /** Stato di blocco dell'utente, visto da chi ha fatto l'accesso. */
+    suspend fun isBlocked(userslug: String): Boolean =
+        getRead(url("api", "user", userslug)).bool("isBlocked")
+
+    /**
+     * Blocca o sblocca un utente: i suoi post e messaggi non si vedranno più.
+     * NodeBB lo offre solo via socket.io (user.toggleBlock), come fa il sito.
+     */
+    suspend fun setBlocked(targetUid: String, myUid: String, block: Boolean) {
+        fun idOf(s: String) = s.toLongOrNull()?.let { kotlinx.serialization.json.JsonPrimitive(it) } ?: kotlinx.serialization.json.JsonPrimitive(s)
+        val arg = buildJsonObject {
+            put("blockeeUid", idOf(targetUid))
+            put("blockerUid", idOf(myUid))
+            put("action", if (block) "block" else "unblock")
+        }
+        invalidateCsrf()
+        val token = csrfToken()
+        try {
+            it.citiverse.app.push.SocketCall.emit(wsHttp, token, "user.toggleBlock", arg)
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            throw ApiException("Il server non ha risposto. Riprova tra poco.")
+        }
+    }
+
     /* ---------- notifiche ---------- */
 
     suspend fun notifications(): List<NotificationItem> =

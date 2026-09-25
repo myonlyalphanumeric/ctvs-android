@@ -51,12 +51,14 @@ jobs:
           RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-        run: ./gradlew --no-daemon --stacktrace testReleaseUnitTest assembleRelease
+        run: ./gradlew --no-daemon --stacktrace testReleaseUnitTest assembleRelease bundleRelease
 
       - name: Rinomina APK
         run: |
-          mkdir -p dist
+          mkdir -p dist store
           cp app/build/outputs/apk/release/app-release.apk "dist/citiverse-${GITHUB_RUN_NUMBER}.apk"
+          # AAB per il Play Store (firmato con la chiave di caricamento)
+          cp app/build/outputs/bundle/release/app-release.aab "store/citiverse-${GITHUB_RUN_NUMBER}.aab"
           ls -la dist
           # Impronte da pubblicare, per controllare che l'APK scaricato sia proprio questo.
           APKSIGNER="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
@@ -71,6 +73,12 @@ jobs:
           path: dist/*.apk
           if-no-files-found: error
 
+      - uses: actions/upload-artifact@v7
+        with:
+          name: citiverse-aab-${{ github.run_number }}
+          path: store/*.aab
+          if-no-files-found: error
+
       # Pubblica l'APK in una release, così si scarica dal telefono senza login su GitHub.
       # Per i branch la release "apk-<branch>" viene sostituita a ogni build.
       - name: Pubblica release
@@ -80,10 +88,10 @@ jobs:
         run: |
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             TAG="${GITHUB_REF_NAME}"
-            gh release create "$TAG" dist/*.apk --title "Citiverse $TAG" --notes "APK firmato, pronto da installare.
+            gh release create "$TAG" dist/*.apk store/*.aab --title "Citiverse $TAG" --notes "APK firmato, pronto da installare.
 
           $(cat dist/impronte.txt)" || \
-              gh release upload "$TAG" dist/*.apk --clobber
+              gh release upload "$TAG" dist/*.apk store/*.aab --clobber
           else
             BRANCH="${GITHUB_REF_NAME//\//-}"
             TAG="apk-${BRANCH}"

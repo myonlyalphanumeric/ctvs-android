@@ -66,7 +66,7 @@ fediverso): l'app li tratta sempre come stringhe.
 
 ## Compilare in locale
 
-Serve JDK 17 e l'Android SDK (platform 35):
+Serve JDK 17 e l'Android SDK (platform 36):
 
 ```bash
 ./gradlew assembleRelease          # APK in app/build/outputs/apk/release/

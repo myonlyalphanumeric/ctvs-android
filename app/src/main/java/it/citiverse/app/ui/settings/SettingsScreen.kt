@@ -1,7 +1,6 @@
 package it.citiverse.app.ui.settings
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -72,12 +71,22 @@ import it.citiverse.app.ui.theme.CvIcons
 import it.citiverse.app.ui.theme.PinGreen
 import kotlinx.coroutines.launch
 
-/** Chiede ad Android di escludere l'app dall'ottimizzazione della batteria. */
-@SuppressLint("BatteryLife")
+/**
+ * Porta l'utente dove si toglie l'ottimizzazione della batteria. Senza il permesso
+ * REQUEST_IGNORE_BATTERY_OPTIMIZATIONS (Google Play lo concede solo a poche categorie
+ * di app) si apre la pagina dell'app nelle impostazioni, con un suggerimento su dove toccare.
+ */
 fun requestIgnoreBattery(ctx: Context) {
-    val direct = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${ctx.packageName}"))
-    runCatching { ctx.startActivity(direct) }.onFailure {
-        runCatching { ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+    val details = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${ctx.packageName}"))
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    val ok = runCatching { ctx.startActivity(details) }.isSuccess ||
+        runCatching { ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess
+    if (ok) {
+        android.widget.Toast.makeText(
+            ctx,
+            "Tocca \"Batteria\" e scegli \"Senza limitazioni\" (o \"Non ottimizzare\")",
+            android.widget.Toast.LENGTH_LONG,
+        ).show()
     }
 }
 

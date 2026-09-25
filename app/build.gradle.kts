@@ -10,14 +10,14 @@ val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
 
 android {
     namespace = "it.citiverse.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "it.citiverse.app"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = buildNumber
-        versionName = "0.2.$buildNumber"
+        versionName = "1.0.$buildNumber"
     }
 
     signingConfigs {

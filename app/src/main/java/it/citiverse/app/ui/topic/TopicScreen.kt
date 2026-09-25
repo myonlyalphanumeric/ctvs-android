@@ -65,6 +65,7 @@ import androidx.lifecycle.viewModelScope
 import it.citiverse.app.CitiverseApp
 import it.citiverse.app.data.Post
 import it.citiverse.app.data.TopicDetail
+import it.citiverse.app.data.UserRef
 import it.citiverse.app.data.ago
 import it.citiverse.app.data.fullDate
 import it.citiverse.app.ui.LinkRouter
@@ -180,6 +181,9 @@ class TopicViewModel(
 
     fun scrolled() = _ui.update { it.copy(scrollTo = null) }
 
+    /** Dopo un blocco: i post di quell'utente spariscono subito (il server li filtra dalle prossime pagine). */
+    fun hideUser(uid: String) = _ui.update { s -> s.copy(posts = s.posts.filter { it.user.uid != uid }) }
+
     fun reply(text: String, toPid: String?, onDone: (Boolean, String?) -> Unit) {
         val id = tid ?: return
         if (_ui.value.sending) return
@@ -233,6 +237,44 @@ fun TopicScreen(tid: String?, pid: String?, navigate: (String) -> Unit, back: ()
     val d = ui.detail
     var draft by rememberSaveable { mutableStateOf("") }
     var replyTo by remember { mutableStateOf<Post?>(null) }
+    var reportTarget by remember { mutableStateOf<ReportTarget?>(null) }
+    var blockTarget by remember { mutableStateOf<UserRef?>(null) }
+    var modBusy by remember { mutableStateOf(false) }
+
+    fun report(t: ReportTarget, reason: String) {
+        modBusy = true
+        scope.launch {
+            try {
+                app.api.flag(t.type, t.id, reason)
+                toast(ctx, "Segnalazione inviata ai moderatori. Grazie!")
+                reportTarget = null
+            } catch (e: Exception) {
+                toast(ctx, e.message ?: "Segnalazione non riuscita")
+            } finally {
+                modBusy = false
+            }
+        }
+    }
+
+    fun block(u: UserRef) {
+        val my = me ?: return
+        modBusy = true
+        scope.launch {
+            try {
+                app.api.setBlocked(u.uid, my.uid, block = true)
+                vm.hideUser(u.uid)
+                toast(ctx, "${shortName(u)} è bloccato")
+                blockTarget = null
+            } catch (e: Exception) {
+                toast(ctx, e.message ?: "Blocco non riuscito")
+            } finally {
+                modBusy = false
+            }
+        }
+    }
+
+    reportTarget?.let { t -> ReportDialog(t, modBusy, onDismiss = { reportTarget = null }, onSend = { report(t, it) }) }
+    blockTarget?.let { u -> BlockDialog(u, modBusy, onDismiss = { blockTarget = null }, onConfirm = { block(u) }) }
 
     val onLink: (String) -> Unit = { url ->
         val route = LinkRouter.route(url)
@@ -369,6 +411,18 @@ fun TopicScreen(tid: String?, pid: String?, navigate: (String) -> Unit, back: ()
                         if (me == null) navigate(Routes.LOGIN) else replyTo = p
                     },
                     onLink = onLink,
+                    isMine = me?.uid == p.user.uid,
+                    onReportPost = {
+                        if (me == null) navigate(Routes.LOGIN)
+                        else reportTarget = ReportTarget("post", p.pid, "post")
+                    },
+                    onReportUser = {
+                        if (me == null) navigate(Routes.LOGIN)
+                        else reportTarget = ReportTarget("user", p.user.uid, shortName(p.user))
+                    },
+                    onBlockUser = {
+                        if (me == null) navigate(Routes.LOGIN) else blockTarget = p.user
+                    },
                 )
             }
             if (ui.loadingMore) item(key = "more") { LoadingBox() }
@@ -388,6 +442,10 @@ private fun PostItem(
     onDown: () -> Unit,
     onReply: () -> Unit,
     onLink: (String) -> Unit,
+    isMine: Boolean,
+    onReportPost: () -> Unit,
+    onReportUser: () -> Unit,
+    onBlockUser: () -> Unit,
 ) {
     val c = Cv.colors
     val shape = RoundedCornerShape(16.dp)
@@ -453,6 +511,7 @@ private fun PostItem(
                 if (url != null && post.user.remoteDomain != null) {
                     ActionPill(CvIcons.External, null, "Apri sull'istanza originale", { onLink(url) })
                 }
+                if (!post.deleted) PostMenu(post, isMine, onReportPost, onReportUser, onBlockUser)
             }
             if (isFirst) {
                 Spacer(Modifier.height(4.dp))
