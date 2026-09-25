@@ -164,39 +164,79 @@ Dopo questa configurazione non devi più scaricare né caricare niente:
 - Note di rilascio: `fastlane/metadata/android/it-IT/changelogs/default.txt`. Per una build specifica si può
   creare `changelogs/<numero build>.txt`.
 
-### A. Crea l'account di servizio (Google Cloud, 10 minuti)
-Un "account di servizio" è un utente-robot che GitHub usa per caricare l'app al posto tuo.
-1. Vai su **https://console.cloud.google.com** con lo stesso account Google della Play Console.
-2. In alto: **Seleziona un progetto → Nuovo progetto** → nome `citiverse-play` → **Crea** (e selezionalo).
-3. Menu ☰ → **API e servizi → Libreria** → cerca **Google Play Android Developer API** → **Abilita**.
-4. Menu ☰ → **IAM e amministrazione → Account di servizio** → **Crea account di servizio**:
-   nome `github-play` → **Crea e continua** → salta i ruoli (**Continua**) → **Fine**.
-   Nessun ruolo di Google Cloud: i permessi li dai nella Play Console (passo B).
-5. Clicca sull'account appena creato → scheda **Chiavi** → **Aggiungi chiave → Crea nuova chiave → JSON** → **Crea**.
-   Si scarica un file `.json`: **è una password**, non mandarlo a nessuno e non metterlo nel repository.
-6. Copia l'indirizzo email dell'account (tipo `github-play@citiverse-play.iam.gserviceaccount.com`).
+### A. Collega GitHub a Google Cloud senza chiavi (Cloud Shell, 5 minuti)
 
-Se al punto 5 Google dice che la creazione di chiavi è disattivata, è una regola dell'organizzazione Google Cloud
-(`iam.disableServiceAccountKeyCreation`): va tolta per questo progetto dal pannello **Criteri dell'organizzazione**.
+Si usa la **federazione delle identità per i workload**: nessun file di chiavi. A ogni build GitHub presenta a
+Google un "tesserino" firmato che vale solo per il repository `myonlyalphanumeric/ctvs-android`, e Google risponde
+con un permesso che scade dopo un'ora. È il metodo consigliato da Google, e funziona anche se la tua organizzazione
+blocca le chiavi JSON (regola `iam.disableServiceAccountKeyCreation`).
+
+Serve l'account di servizio `github-play` (già creato: Google Cloud → IAM e amministrazione → Account di servizio).
+
+1. In Google Cloud, con il progetto `citiverse-play` selezionato in alto, apri la **Cloud Shell**: icona `>_` in alto a destra.
+2. Incolla questi comandi, tutti insieme, e premi Invio:
+
+```bash
+PROJECT_ID=$(gcloud config get-value project)
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
+REPO=myonlyalphanumeric/ctvs-android
+SA="github-play@${PROJECT_ID}.iam.gserviceaccount.com"
+
+gcloud services enable androidpublisher.googleapis.com iamcredentials.googleapis.com sts.googleapis.com
+
+gcloud iam workload-identity-pools create github \
+  --location=global --display-name="GitHub Actions"
+
+gcloud iam workload-identity-pools providers create-oidc github \
+  --location=global --workload-identity-pool=github --display-name="GitHub" \
+  --issuer-uri="https://token.actions.githubusercontent.com" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
+  --attribute-condition="assertion.repository=='${REPO}'"
+
+gcloud iam service-accounts add-iam-policy-binding "$SA" \
+  --role=roles/iam.workloadIdentityUser \
+  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github/attribute.repository/${REPO}"
+
+echo "GCP_WIF_PROVIDER = projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github/providers/github"
+echo "GCP_SERVICE_ACCOUNT = ${SA}"
+```
+
+Cosa fanno:
+- **Le prime quattro righe** salvano in variabili i dati usati dopo: `gcloud config get-value project` legge il
+  progetto aperto, `gcloud projects describe … --format='value(projectNumber)'` ne ricava il numero (serve negli
+  indirizzi di Google), `REPO` è il tuo repository, `SA` è l'email dell'account di servizio.
+- **`gcloud services enable …`** attiva tre API: quella di Google Play (`androidpublisher`), quella che genera i
+  permessi temporanei (`iamcredentials`) e quella che scambia il tesserino di GitHub con uno di Google (`sts`).
+- **`workload-identity-pools create github`** crea un "gruppo di identità esterne" chiamato `github`.
+  `--location=global` perché questi oggetti non stanno in una regione, `--display-name` è solo il nome visibile.
+- **`providers create-oidc github`** dice a Google di fidarsi dei tesserini firmati da GitHub:
+  - `--issuer-uri` è l'indirizzo con cui GitHub firma i tesserini;
+  - `--attribute-mapping` indica quali dati del tesserino leggere (chi è e da quale repository arriva);
+  - `--attribute-condition` è il lucchetto: **accetta solo tesserini del tuo repository**. Gli altri repository
+    di GitHub vengono rifiutati.
+- **`add-iam-policy-binding … roles/iam.workloadIdentityUser`** permette **solo** ai workflow del tuo repository
+  di agire come l'account di servizio `github-play`.
+- **Le due righe `echo`** stampano i due valori da copiare in GitHub (passo C).
+
+Se un comando dice che la cosa "esiste già" (per esempio se lo rilanci due volte), va bene: passa al successivo.
+Se in fondo non vedi le due righe `GCP_…`, mandami lo screenshot.
 
 ### B. Dai i permessi nella Play Console
 1. Play Console → **Utenti e autorizzazioni** (menu a sinistra, nella pagina di tutte le app) → **Invita nuovi utenti**.
-2. Email: quella dell'account di servizio (A.6).
+2. Email: quella di `GCP_SERVICE_ACCOUNT` (es. `github-play@citiverse-play.iam.gserviceaccount.com`).
 3. Scheda **Autorizzazioni app** → **Aggiungi app** → **Citiverse** → spunta:
    **Rilasciare app in produzione, escludere dispositivi e usare Play App Signing**,
    **Rilasciare nei canali di test**, **Gestire i canali di test e modificare gli elenchi di tester**.
    Nient'altro (niente dati finanziari, niente amministrazione).
 4. **Invita utente** → conferma. I permessi possono metterci qualche minuto ad attivarsi.
 
-### C. Metti la chiave in GitHub
-GitHub → repository → **Settings → Secrets and variables → Actions → New repository secret**:
-- Name: `PLAY_SERVICE_ACCOUNT_JSON`
-- Secret: apri il file `.json` con un editor di testo, seleziona tutto, copia e incolla.
+### C. Metti i due valori in GitHub
+Non sono segreti (da soli non danno accesso a niente), quindi vanno tra le **variabili**, non tra i secrets.
+GitHub → repository → **Settings → Secrets and variables → Actions** → scheda **Variables** → **New repository variable**, due volte:
+- Name `GCP_WIF_PROVIDER` → Value: la riga `projects/…/providers/github` stampata dalla Cloud Shell
+- Name `GCP_SERVICE_ACCOUNT` → Value: l'email dell'account di servizio
 
-Poi cancella il file `.json` dal computer, oppure tienilo in un posto sicuro. Se un giorno pensi che sia finito in
-mani sbagliate: Google Cloud → account di servizio → Chiavi → elimina la chiave, e creane una nuova.
-
-Finché il secret non c'è, la build funziona come prima e salta solo la pubblicazione.
+Finché le variabili non ci sono, la build funziona come prima e salta solo la pubblicazione.
 
 ## Aggiornamenti senza automazione (se non configuri la parte sopra)
 

@@ -16,6 +16,8 @@ on:
 
 permissions:
   contents: write
+  # Per l'accesso a Google Play senza chiavi (federazione delle identità con il token OIDC di GitHub)
+  id-token: write
 
 concurrency:
   group: apk-${{ github.ref }}
@@ -87,17 +89,34 @@ jobs:
 
       # Pubblicazione su Google Play: ogni push sul branch principale va nel test interno;
       # da Actions → Run workflow si sceglie il canale (test chiuso o produzione).
+      # Accesso senza chiavi: GitHub presenta a Google un token firmato che vale solo per questo
+      # repository e Google risponde con un permesso che scade dopo un'ora.
+      - name: Accesso a Google Play (senza chiavi)
+        id: gplay
+        if: >-
+          vars.GCP_WIF_PROVIDER != '' &&
+          ((github.event_name == 'push' && github.ref_name == github.event.repository.default_branch) ||
+           github.event_name == 'workflow_dispatch')
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/androidpublisher
+          create_credentials_file: false
+
       - name: Pubblica su Google Play
         if: >-
           (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch) ||
           github.event_name == 'workflow_dispatch'
         env:
+          PLAY_ACCESS_TOKEN: ${{ steps.gplay.outputs.access_token }}
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           PACKAGE_NAME: it.citiverse.app
           TRACK: ${{ github.event_name == 'workflow_dispatch' && inputs.track || 'internal' }}
         run: |
-          if [ -z "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
-            echo "::notice::Google Play: pubblicazione saltata, manca il secret PLAY_SERVICE_ACCOUNT_JSON"
+          if [ -z "$PLAY_ACCESS_TOKEN" ] && [ -z "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
+            echo "::notice::Google Play: pubblicazione saltata, accesso a Google non configurato (variabili GCP_WIF_PROVIDER e GCP_SERVICE_ACCOUNT)"
             exit 0
           fi
           if [ -z "${RELEASE_KEYSTORE:-}" ]; then
