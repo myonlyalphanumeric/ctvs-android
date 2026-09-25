@@ -155,7 +155,50 @@ minori). "L'app potrebbe attrarre i bambini?" → **No**.
 La prima revisione di solito richiede **da qualche giorno a 1–2 settimane**. Se Google rifiuta qualcosa, arriva
 un'email con il motivo: mandamela e la sistemiamo.
 
-## Aggiornamenti futuri
+## Aggiornamenti automatici (da configurare una volta)
 
-Ogni volta: crea un tag nuovo (`v1.0.1`, `v1.1.0`…), scarica l'`.aab` dalla release, caricalo nella Console come
-nuova release. Il numero di versione cresce da solo. Più avanti si può automatizzare anche il caricamento.
+Dopo questa configurazione non devi più scaricare né caricare niente:
+- **ogni modifica al codice** (push sul branch principale) arriva da sola nel **Test interno** in pochi minuti;
+- per mandarla **ai tester o a tutti**: GitHub → **Actions** → **Build APK** → **Run workflow** → scegli
+  `alpha` (test chiuso) o `production` → **Run workflow**. Per la produzione Google fa comunque la sua revisione.
+- Note di rilascio: `fastlane/metadata/android/it-IT/changelogs/default.txt`. Per una build specifica si può
+  creare `changelogs/<numero build>.txt`.
+
+### A. Crea l'account di servizio (Google Cloud, 10 minuti)
+Un "account di servizio" è un utente-robot che GitHub usa per caricare l'app al posto tuo.
+1. Vai su **https://console.cloud.google.com** con lo stesso account Google della Play Console.
+2. In alto: **Seleziona un progetto → Nuovo progetto** → nome `citiverse-play` → **Crea** (e selezionalo).
+3. Menu ☰ → **API e servizi → Libreria** → cerca **Google Play Android Developer API** → **Abilita**.
+4. Menu ☰ → **IAM e amministrazione → Account di servizio** → **Crea account di servizio**:
+   nome `github-play` → **Crea e continua** → salta i ruoli (**Continua**) → **Fine**.
+   Nessun ruolo di Google Cloud: i permessi li dai nella Play Console (passo B).
+5. Clicca sull'account appena creato → scheda **Chiavi** → **Aggiungi chiave → Crea nuova chiave → JSON** → **Crea**.
+   Si scarica un file `.json`: **è una password**, non mandarlo a nessuno e non metterlo nel repository.
+6. Copia l'indirizzo email dell'account (tipo `github-play@citiverse-play.iam.gserviceaccount.com`).
+
+Se al punto 5 Google dice che la creazione di chiavi è disattivata, è una regola dell'organizzazione Google Cloud
+(`iam.disableServiceAccountKeyCreation`): va tolta per questo progetto dal pannello **Criteri dell'organizzazione**.
+
+### B. Dai i permessi nella Play Console
+1. Play Console → **Utenti e autorizzazioni** (menu a sinistra, nella pagina di tutte le app) → **Invita nuovi utenti**.
+2. Email: quella dell'account di servizio (A.6).
+3. Scheda **Autorizzazioni app** → **Aggiungi app** → **Citiverse** → spunta:
+   **Rilasciare app in produzione, escludere dispositivi e usare Play App Signing**,
+   **Rilasciare nei canali di test**, **Gestire i canali di test e modificare gli elenchi di tester**.
+   Nient'altro (niente dati finanziari, niente amministrazione).
+4. **Invita utente** → conferma. I permessi possono metterci qualche minuto ad attivarsi.
+
+### C. Metti la chiave in GitHub
+GitHub → repository → **Settings → Secrets and variables → Actions → New repository secret**:
+- Name: `PLAY_SERVICE_ACCOUNT_JSON`
+- Secret: apri il file `.json` con un editor di testo, seleziona tutto, copia e incolla.
+
+Poi cancella il file `.json` dal computer, oppure tienilo in un posto sicuro. Se un giorno pensi che sia finito in
+mani sbagliate: Google Cloud → account di servizio → Chiavi → elimina la chiave, e creane una nuova.
+
+Finché il secret non c'è, la build funziona come prima e salta solo la pubblicazione.
+
+## Aggiornamenti senza automazione (se non configuri la parte sopra)
+
+Scarica l'artifact `citiverse-aab-N` dall'ultima build su GitHub (Actions), estrai il file `.aab` e caricalo nella
+Console come nuova release. Il numero di versione cresce da solo.

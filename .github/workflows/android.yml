@@ -7,6 +7,12 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      track:
+        description: 'Canale di Google Play: internal = test interno, alpha = test chiuso, production = tutti'
+        type: choice
+        options: [internal, alpha, production]
+        default: internal
 
 permissions:
   contents: write
@@ -78,6 +84,34 @@ jobs:
           name: citiverse-aab-${{ github.run_number }}
           path: store/*.aab
           if-no-files-found: error
+
+      # Pubblicazione su Google Play: ogni push sul branch principale va nel test interno;
+      # da Actions → Run workflow si sceglie il canale (test chiuso o produzione).
+      - name: Pubblica su Google Play
+        if: >-
+          (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch) ||
+          github.event_name == 'workflow_dispatch'
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          PACKAGE_NAME: it.citiverse.app
+          TRACK: ${{ github.event_name == 'workflow_dispatch' && inputs.track || 'internal' }}
+        run: |
+          if [ -z "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
+            echo "::notice::Google Play: pubblicazione saltata, manca il secret PLAY_SERVICE_ACCOUNT_JSON"
+            exit 0
+          fi
+          if [ -z "${RELEASE_KEYSTORE:-}" ]; then
+            echo "::warning::Google Play: pubblicazione saltata, l'AAB non è firmato con la chiave vera"
+            exit 0
+          fi
+          # Note di rilascio: changelogs/<numero build>.txt se c'è, altrimenti default.txt
+          NOTES=fastlane/metadata/android/it-IT/changelogs
+          if [ -f "$NOTES/${GITHUB_RUN_NUMBER}.txt" ]; then
+            export RELEASE_NOTES_FILE="$NOTES/${GITHUB_RUN_NUMBER}.txt"
+          else
+            export RELEASE_NOTES_FILE="$NOTES/default.txt"
+          fi
+          bash .github/scripts/play-upload.sh "store/citiverse-${GITHUB_RUN_NUMBER}.aab" "$TRACK" "1.0.${GITHUB_RUN_NUMBER}"
 
       # Pubblica l'APK in una release, così si scarica dal telefono senza login su GitHub.
       # Per i branch la release "apk-<branch>" viene sostituita a ogni build.
