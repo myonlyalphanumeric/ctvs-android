@@ -454,6 +454,20 @@ class NodeBBApi(val cookies: PersistentCookieJar) {
     suspend fun notifications(): List<NotificationItem> =
         getRead(url("api", "notifications")).objects("notifications").mapNotNull { NotificationItem.from(it) }
 
+    /**
+     * Segna tutte le notifiche come lette, come il pulsante del sito (socket notifications.markAllRead).
+     * Se il socket non risponde, le segna una per una con l'API REST (PUT /api/v3/notifications/{nid}/read).
+     */
+    suspend fun markAllNotificationsRead(unreadNids: List<String>) {
+        try {
+            invalidateCsrf()
+            it.citiverse.app.push.SocketCall.emit(wsHttp, csrfToken(), "notifications.markAllRead", JsonObject(emptyMap()))
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException && e !is kotlinx.coroutines.TimeoutCancellationException) throw e
+            unreadNids.forEach { nid -> v3("PUT", url("api", "v3", "notifications", nid, "read")) }
+        }
+    }
+
     /** Testi in italiano di NodeBB (es. notifications.json), per tradurre "[[notifications:...]]". */
     suspend fun languageFile(namespace: String): JsonObject =
         getRead(url("assets", "language", "it", "$namespace.json"))

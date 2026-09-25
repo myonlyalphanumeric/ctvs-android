@@ -1,5 +1,8 @@
 package it.citiverse.app.ui.notifications
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -17,8 +20,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,9 +40,9 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import it.citiverse.app.CitiverseApp
+import it.citiverse.app.data.BASE_URL
 import it.citiverse.app.data.NotificationItem
 import it.citiverse.app.data.ago
-import it.citiverse.app.data.BASE_URL
 import it.citiverse.app.push.NotifStrings
 import it.citiverse.app.push.NotifText
 import it.citiverse.app.push.Notifier
@@ -51,7 +56,9 @@ import it.citiverse.app.ui.components.ErrorBox
 import it.citiverse.app.ui.components.LoadingBox
 import it.citiverse.app.ui.components.LoginPrompt
 import it.citiverse.app.ui.components.openExternal
+import it.citiverse.app.ui.components.toast
 import it.citiverse.app.ui.theme.Cv
+import it.citiverse.app.ui.theme.CvIcons
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -65,6 +72,7 @@ data class NotifUi(
     val loading: Boolean = true,
     val refreshing: Boolean = false,
     val error: String? = null,
+    val markingAll: Boolean = false,
 )
 
 class NotificationsViewModel(private val app: CitiverseApp) : ViewModel() {
@@ -89,6 +97,24 @@ class NotificationsViewModel(private val app: CitiverseApp) : ViewModel() {
         }
     }
 
+    /** "Segna tutte come lette": aggiorna subito la lista, poi lo dice al server. */
+    fun markAllRead(onDone: (List<String>) -> Unit, onError: (String) -> Unit) {
+        val unread = _ui.value.rows.filter { !it.item.read }.map { it.item.nid }
+        if (unread.isEmpty() || _ui.value.markingAll) return
+        _ui.update { s -> s.copy(markingAll = true) }
+        viewModelScope.launch {
+            try {
+                app.api.markAllNotificationsRead(unread)
+                _ui.update { s -> s.copy(markingAll = false, rows = s.rows.map { it.copy(item = it.item.copy(read = true)) }) }
+                app.unreadCount.value = 0
+                onDone(unread)
+            } catch (e: Exception) {
+                _ui.update { s -> s.copy(markingAll = false) }
+                onError(e.message ?: "Operazione non riuscita")
+            }
+        }
+    }
+
     fun markOpened(item: NotificationItem) {
         _ui.update { s -> s.copy(rows = s.rows.map { if (it.item.nid == item.nid) it.copy(item = it.item.copy(read = true)) else it }) }
         app.unreadCount.update { (it - (if (item.read) 0 else 1)).coerceAtLeast(0) }
@@ -107,13 +133,37 @@ fun NotificationsScreen(navigate: (String) -> Unit, contentPadding: PaddingValue
     LaunchedEffect(me?.uid) { vm.load() }
 
     Column(Modifier.fillMaxSize().padding(top = contentPadding.calculateTopPadding())) {
-        Text(
-            "Notifiche",
-            fontSize = 24.sp,
-            fontWeight = FontWeight.ExtraBold,
-            color = Cv.colors.text,
-            modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 8.dp),
-        )
+        Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Notifiche",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = Cv.colors.text,
+                modifier = Modifier.weight(1f),
+            )
+            val hasUnread = ui.rows.any { !it.item.read }
+            AnimatedVisibility(visible = me != null && hasUnread, enter = fadeIn(), exit = fadeOut()) {
+                TextButton(
+                    enabled = !ui.markingAll,
+                    onClick = {
+                        vm.markAllRead(
+                            onDone = { nids ->
+                                nids.forEach { Notifier.cancel(ctx, it) }
+                                toast(ctx, "Tutte le notifiche sono segnate come lette")
+                            },
+                            onError = { toast(ctx, it) },
+                        )
+                    },
+                ) {
+                    Icon(CvIcons.Check, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.size(6.dp))
+                    Text(if (ui.markingAll) "Un attimo…" else "Segna tutte come lette", fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
         if (me == null) {
             LoginPrompt("Accedi per vedere risposte, menzioni e voti ai tuoi post.", onLogin = { navigate(Routes.LOGIN) })
         } else {
