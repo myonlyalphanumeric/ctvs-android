@@ -65,7 +65,7 @@ jobs:
             echo "Certificato di firma: $("$APKSIGNER" verify --print-certs dist/*.apk | grep -m1 'SHA-256' | sed 's/.*: //')"
           } | tee dist/impronte.txt
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: citiverse-apk-${{ github.run_number }}
           path: dist/*.apk
