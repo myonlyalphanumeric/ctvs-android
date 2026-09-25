@@ -27,7 +27,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       # Facoltativo: se nei secrets c'è una chiave di firma vera la usa,
       # altrimenti l'APK viene firmato con la chiave di sviluppo del repository.
