@@ -26,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -89,21 +90,60 @@ private fun TextFieldValue.edit() = MdEdit(text, selection.start, selection.end)
 private fun MdEdit.value() = TextFieldValue(text, TextRange(selStart, selEnd))
 
 /**
- * Editor per i post: barra dei formati (grassetto, corsivo, titolo, elenchi, citazione,
- * codice, link) sopra il testo. Chi non conosce il Markdown usa i pulsanti; chi lo conosce
- * può scriverlo a mano come sul sito.
+ * Campo di testo dei post: Markdown colorato mentre si scrive. La barra dei formati
+ * è a parte ([MarkdownToolbar]), agganciata sopra la tastiera: così il menu
+ * Copia/Incolla di Android, che compare sopra la selezione, non la copre mai.
  */
 @Composable
-fun MarkdownEditor(
+fun MarkdownField(
     value: TextFieldValue,
     onValueChange: (TextFieldValue) -> Unit,
     placeholder: String,
     modifier: Modifier = Modifier,
     minHeight: Dp = 220.dp,
+    onFocusChange: (Boolean) -> Unit = {},
 ) {
     val c = Cv.colors
     val link = MaterialTheme.colorScheme.primary
     val look = remember(c, link) { MarkdownLook(c, link) }
+    Box(
+        modifier
+            .clip(RoundedCornerShape(16.dp))
+            .border(BorderStroke(1.dp, c.border), RoundedCornerShape(16.dp))
+            .background(c.card)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            textStyle = TextStyle(color = c.text, fontSize = 16.sp, lineHeight = 23.sp),
+            cursorBrush = SolidColor(link),
+            visualTransformation = look,
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = minHeight)
+                .onFocusChanged { onFocusChange(it.isFocused) },
+            decorationBox = { inner ->
+                if (value.text.isEmpty()) Text(placeholder, color = c.muted, fontSize = 16.sp)
+                inner()
+            },
+        )
+    }
+}
+
+/**
+ * Barra dei formati (grassetto, corsivo, barrato, titolo, elenchi, citazione, codice, link).
+ * Chi non conosce il Markdown usa i pulsanti; un pulsante è illuminato se il formato è
+ * già attivo dove si trova il cursore, e toccarlo di nuovo lo toglie.
+ */
+@Composable
+fun MarkdownToolbar(
+    value: TextFieldValue,
+    onValueChange: (TextFieldValue) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val c = Cv.colors
     val haptic = LocalHapticFeedback.current
     val active = remember(value.text, value.selection) {
         MarkdownHighlight.activeAt(MarkdownHighlight.spans(value.text), value.selection.start)
@@ -114,17 +154,13 @@ fun MarkdownEditor(
         onValueChange(change(value.edit()).value())
     }
 
-    Column(
-        modifier
-            .clip(RoundedCornerShape(16.dp))
-            .border(BorderStroke(1.dp, c.border), RoundedCornerShape(16.dp))
-            .background(c.card),
-    ) {
+    Column(modifier.fillMaxWidth().background(c.card)) {
+        HorizontalDivider(color = c.border)
         Row(
             Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 6.dp, vertical = 6.dp),
+                .padding(horizontal = 8.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -157,22 +193,6 @@ fun MarkdownEditor(
             FormatButton("Link", MdKind.LINK in active || MdKind.URL in active, icon = CvIcons.Link) {
                 format { MarkdownEdit.link(it) }
             }
-        }
-        HorizontalDivider(color = c.border)
-        Box(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                textStyle = TextStyle(color = c.text, fontSize = 16.sp, lineHeight = 23.sp),
-                cursorBrush = SolidColor(link),
-                visualTransformation = look,
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                modifier = Modifier.fillMaxWidth().heightIn(min = minHeight),
-                decorationBox = { inner ->
-                    if (value.text.isEmpty()) Text(placeholder, color = c.muted, fontSize = 16.sp)
-                    inner()
-                },
-            )
         }
     }
 }
