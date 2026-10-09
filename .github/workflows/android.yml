@@ -28,14 +28,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nessuno step usa git con le credenziali: la release passa da gh con GH_TOKEN.
+          persist-credentials: false
 
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: '17'
 
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
 
       # Facoltativo: se nei secrets c'è una chiave di firma vera la usa,
       # altrimenti l'APK viene firmato con la chiave di sviluppo del repository.
@@ -75,13 +78,13 @@ jobs:
             echo "Certificato di firma: $("$APKSIGNER" verify --print-certs dist/*.apk | grep -m1 'SHA-256' | sed 's/.*: //')"
           } | tee dist/impronte.txt
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: citiverse-apk-${{ github.run_number }}
           path: dist/*.apk
           if-no-files-found: error
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: citiverse-aab-${{ github.run_number }}
           path: store/*.aab
@@ -91,13 +94,24 @@ jobs:
       # da Actions → Run workflow si sceglie il canale (test chiuso o produzione).
       # Accesso senza chiavi: GitHub presenta a Google un token firmato che vale solo per questo
       # repository e Google risponde con un permesso che scade dopo un'ora.
+      # Da Run workflow si pubblica solo se il workflow è avviato dal branch principale.
+      - name: Google Play saltato (avvio manuale da un altro branch)
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          github.ref != format('refs/heads/{0}', github.event.repository.default_branch)
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          echo "::notice::Google Play: pubblicazione saltata, il workflow è stato avviato a mano da '${GITHUB_REF}' e non dal branch principale '${DEFAULT_BRANCH}'. Per pubblicare avvialo da '${DEFAULT_BRANCH}'."
+
       - name: Accesso a Google Play (senza chiavi)
         id: gplay
         if: >-
           vars.GCP_WIF_PROVIDER != '' &&
           ((github.event_name == 'push' && github.ref_name == github.event.repository.default_branch) ||
-           github.event_name == 'workflow_dispatch')
-        uses: google-github-actions/auth@v2
+           (github.event_name == 'workflow_dispatch' &&
+            github.ref == format('refs/heads/{0}', github.event.repository.default_branch)))
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
@@ -108,7 +122,8 @@ jobs:
       - name: Pubblica su Google Play
         if: >-
           (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch) ||
-          github.event_name == 'workflow_dispatch'
+          (github.event_name == 'workflow_dispatch' &&
+           github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
         env:
           PLAY_ACCESS_TOKEN: ${{ steps.gplay.outputs.access_token }}
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
