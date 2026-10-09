@@ -55,17 +55,36 @@ class CitiverseApp : Application(), ImageLoaderFactory {
         catCache = null
     }
 
+    /**
+     * La sessione non è più valida (scaduta, uscita dal server, utente diverso):
+     * dimentica l'utente e cancella i cookie, così non resta niente della vecchia sessione.
+     */
+    fun endSession() {
+        prefs.setMe(null)
+        api.cookies.clear()
+        api.invalidateCsrf()
+        resetUserData()
+    }
+
     override fun onCreate() {
         super.onCreate()
         prefs = Prefs(this)
-        api = NodeBBApi(PersistentCookieJar(this))
+        val cookies = PersistentCookieJar(this)
+        api = NodeBBApi(cookies)
         votes = VoteStore(api)
         Notifier.ensureChannels(this)
+        if (cookies.droppedLegacyCookies && prefs.me.value != null) {
+            // Primo avvio dopo l'aggiornamento: i cookie nel vecchio formato sono stati cancellati
+            // per sicurezza. Si chiede un nuovo accesso, una sola volta e spiegando il perché.
+            endSession()
+            prefs.reloginNotice = true
+            Notifier.reloginRequired(this)
+        }
     }
 
     override fun newImageLoader(): ImageLoader =
         ImageLoader.Builder(this)
-            .okHttpClient(api.http)
+            .okHttpClient(api.imageHttp)
             .crossfade(true)
             .memoryCache { MemoryCache.Builder(this).maxSizePercent(0.2).build() }
             .diskCache { DiskCache.Builder().directory(cacheDir.resolve("images")).maxSizeBytes(80L * 1024 * 1024).build() }

@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import okhttp3.CookieJar
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
@@ -91,6 +92,14 @@ class NodeBBApi(val cookies: PersistentCookieJar) {
     val wsHttp: OkHttpClient = http.newBuilder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .pingInterval(0, TimeUnit.MILLISECONDS)
+        .build()
+
+    /**
+     * Client per le immagini (Coil): stesse impostazioni ma senza cookie, perché le immagini
+     * arrivano anche da server federati che non devono né ricevere né impostare cookie.
+     */
+    val imageHttp: OkHttpClient = http.newBuilder()
+        .cookieJar(CookieJar.NO_COOKIES)
         .build()
 
     /** Per il secondo passo della 2FA: serve leggere il redirect, non seguirlo. */
@@ -466,6 +475,11 @@ class NodeBBApi(val cookies: PersistentCookieJar) {
             if (e is kotlinx.coroutines.CancellationException && e !is kotlinx.coroutines.TimeoutCancellationException) throw e
             unreadNids.forEach { nid -> v3("PUT", url("api", "v3", "notifications", nid, "read")) }
         }
+    }
+
+    /** Segna letta una notifica (PUT /api/v3/notifications/{nid}/read, NodeBB 4.11 e successivi). */
+    suspend fun markNotificationRead(nid: String) {
+        v3("PUT", url("api", "v3", "notifications", nid, "read"))
     }
 
     /** Testi in italiano di NodeBB (es. notifications.json), per tradurre "[[notifications:...]]". */

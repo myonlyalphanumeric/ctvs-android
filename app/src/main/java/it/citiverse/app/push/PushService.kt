@@ -19,6 +19,7 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import it.citiverse.app.CitiverseApp
 import it.citiverse.app.data.ApiException
+import it.citiverse.app.data.Me
 import it.citiverse.app.data.NotificationItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,7 +49,6 @@ class PushService : Service(), SocketClient.Listener {
         private const val TAG = "PushService"
         const val ACTION_START = "it.citiverse.push.START"
         const val ACTION_CHECK = "it.citiverse.push.CHECK"
-        const val ACTION_MARK_READ = "it.citiverse.push.MARK_READ"
 
         /** Ogni quanto l'allarme (anche in Doze) controlla che la connessione sia viva. */
         private const val WATCHDOG_MS = 15L * 60 * 1000
@@ -68,13 +68,6 @@ class PushService : Service(), SocketClient.Listener {
         fun stop(ctx: Context) {
             ctx.stopService(Intent(ctx, PushService::class.java))
         }
-
-        fun markRead(ctx: Context, nid: String) {
-            if (!running) return
-            runCatching {
-                ctx.startService(Intent(ctx, PushService::class.java).setAction(ACTION_MARK_READ).putExtra("nid", nid))
-            }
-        }
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -85,6 +78,8 @@ class PushService : Service(), SocketClient.Listener {
     private var attempt = 0
     private var lastAttemptAt = 0L
     @Volatile private var sessionUid: String? = null
+    /** Utente per cui è stata aperta la connessione (stesso oggetto di prefs.me). */
+    @Volatile private var connectedAs: Me? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -106,9 +101,6 @@ class PushService : Service(), SocketClient.Listener {
         }
         scheduleWatchdog()
         when (intent?.action) {
-            ACTION_MARK_READ -> intent.getStringExtra("nid")?.let { nid ->
-                scope.launch { socket.emit("notifications.markRead", listOf(JsonPrimitive(nid))) }
-            }
             ACTION_CHECK -> scope.launch {
                 // Controllo dell'allarme: se la connessione è caduta mentre il telefono dormiva, riparte subito.
                 if (!socket.isConnected) {
@@ -152,6 +144,7 @@ class PushService : Service(), SocketClient.Listener {
     /** Deve girare nello scope del servizio (un thread alla volta). */
     private fun connectNow() {
         lastAttemptAt = SystemClock.elapsedRealtime()
+        connectedAs = app.prefs.me.value
         connectJob?.cancel()
         connectJob = scope.launch {
             if (!hasNetwork()) {
@@ -190,6 +183,9 @@ class PushService : Service(), SocketClient.Listener {
     }
 
     private fun sessionExpired() {
+        // Utente e cookie della vecchia sessione non servono più: si riparte dal login.
+        // Solo se nel frattempo non c'è stato un nuovo accesso, che altrimenti verrebbe cancellato.
+        if (app.prefs.me.value === connectedAs) app.endSession()
         setStatus("Sessione scaduta: accedi di nuovo")
         Notifier.sessionExpired(this)
         stopSelf()

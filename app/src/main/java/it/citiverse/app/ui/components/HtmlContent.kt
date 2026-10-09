@@ -116,8 +116,10 @@ object HtmlParser {
     }
 
     private fun image(img: Element, link: String?): HtmlBlock? {
-        val src = img.absUrl("src").ifBlank { img.attr("src") }
-        if (src.isBlank()) return null
+        val src = img.absUrl("src").ifBlank { img.attr("src") }.trim()
+        // A Coil arrivano solo indirizzi web: niente file:, content:, data: o altri schemi.
+        val scheme = src.substringBefore(':', "").lowercase()
+        if (scheme != "http" && scheme != "https") return null
         return HtmlBlock.Image(src, img.attr("alt"), link)
     }
 

@@ -11,6 +11,9 @@ object NotifText {
     // così le chiavi annidate vengono tradotte per prime.
     private val TOKEN = Regex("""\[\[([\w-]+):([\w.\-]+)((?:,[^\[\]]*)?)]]""")
 
+    /** Segnaposto dei testi di NodeBB: %1, %2, … */
+    private val PLACEHOLDER = Regex("""%(\d+)""")
+
     /** Testi di riserva se il file di lingua non è ancora stato scaricato. */
     val FALLBACK: Map<String, String> = mapOf(
         "notifications:user-posted-to" to "<strong>%1</strong> ha risposto a: <strong>%2</strong>",
@@ -39,15 +42,23 @@ object NotifText {
                 if (template == null) {
                     args.joinToString(" · ").ifBlank { key.replace('-', ' ') }
                 } else {
-                    var out: String = template
-                    // dal più alto al più basso, così %1 non tocca %10
-                    for (i in args.indices.reversed()) out = out.replace("%${i + 1}", args[i])
-                    out
+                    fill(template, args)
                 }
             }
         }
-        return stripHtml(text)
+        // Le parentesi quadre degli argomenti tornano tali solo alla fine: così un argomento
+        // che contiene "&#91;&#91;…&#93;&#93;" non diventa una chiave da tradurre al giro dopo.
+        return stripHtml(text.replace("&#91;", "[").replace("&#93;", "]"))
     }
+
+    /**
+     * Sostituisce %1, %2… in un solo passaggio: il testo inserito non viene più riletto,
+     * quindi un argomento che contiene "%2" resta com'è. Segnaposto senza argomento: invariati.
+     */
+    internal fun fill(template: String, args: List<String>): String =
+        PLACEHOLDER.replace(template) { m ->
+            m.groupValues[1].toIntOrNull()?.let { args.getOrNull(it - 1) } ?: m.value
+        }
 
     private fun splitArgs(s: String): List<String> {
         if (s.isBlank()) return emptyList()
@@ -57,8 +68,6 @@ object NotifText {
     private fun unescape(s: String): String = s
         .replace("&#44;", ",")
         .replace("&#x2C;", ",")
-        .replace("&#91;", "[")
-        .replace("&#93;", "]")
 
     fun stripHtml(html: String): String = html
         .replace(Regex("<[^>]*>"), "")

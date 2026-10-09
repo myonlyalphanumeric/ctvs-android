@@ -30,6 +30,7 @@ class PollWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
             Result.success()
         } catch (e: ApiException) {
             if (e.code == 401 || e.code == 403) {
+                app.endSession()
                 app.prefs.pushStatus = "Sessione scaduta: accedi di nuovo"
                 Notifier.sessionExpired(applicationContext)
                 Result.success()
