@@ -21,6 +21,7 @@ import it.citiverse.app.CitiverseApp
 import it.citiverse.app.data.ApiException
 import it.citiverse.app.data.Me
 import it.citiverse.app.data.NotificationItem
+import it.citiverse.app.data.SessionGuard
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -103,12 +104,20 @@ class PushService : Service(), SocketClient.Listener {
         when (intent?.action) {
             ACTION_CHECK -> scope.launch {
                 // Controllo dell'allarme: se la connessione è caduta mentre il telefono dormiva, riparte subito.
-                if (!socket.isConnected) {
+                if (!socket.isConnected || !app.session.isCurrent(connectedAs)) {
                     attempt = 0
                     connectNow()
                 }
             }
-            else -> scope.launch { if (!socket.isConnected && connectJob?.isActive != true) connectNow() }
+            else -> scope.launch {
+                // Avvio dopo un nuovo accesso: la connessione aperta (o in corso) è della sessione
+                // vecchia, quindi si riapre subito con quella nuova.
+                val stale = !app.session.isCurrent(connectedAs)
+                if (stale || (!socket.isConnected && connectJob?.isActive != true)) {
+                    if (stale) attempt = 0
+                    connectNow()
+                }
+            }
         }
         return START_STICKY
     }
@@ -182,13 +191,23 @@ class PushService : Service(), SocketClient.Listener {
         }
     }
 
+    /** Deve girare nello scope del servizio (un thread alla volta). */
     private fun sessionExpired() {
-        // Utente e cookie della vecchia sessione non servono più: si riparte dal login.
-        // Solo se nel frattempo non c'è stato un nuovo accesso, che altrimenti verrebbe cancellato.
-        app.session.endIfStill(connectedAs)
-        setStatus("Sessione scaduta: accedi di nuovo")
-        Notifier.sessionExpired(this)
-        stopSelf()
+        when (app.session.resolveExpired(connectedAs)) {
+            // Era la sessione attuale: utente e cookie cancellati, si riparte dal login.
+            SessionGuard.Expired.ENDED -> {
+                setStatus("Sessione scaduta: accedi di nuovo")
+                Notifier.sessionExpired(this)
+                stopSelf()
+            }
+            // Risposta della sessione vecchia dopo un nuovo accesso: niente avviso, ci si riconnette.
+            SessionGuard.Expired.REPLACED -> {
+                attempt = 0
+                connectNow()
+            }
+            // L'utente è uscito nel frattempo: PushController ferma comunque il servizio.
+            SessionGuard.Expired.LOGGED_OUT -> stopSelf()
+        }
     }
 
     /* ---------- eventi del socket (arrivano dal thread di OkHttp) ---------- */

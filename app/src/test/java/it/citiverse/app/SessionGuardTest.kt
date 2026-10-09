@@ -59,4 +59,45 @@ class SessionGuardTest {
         assertFalse(app.guard.endIfStill(startedAs))
         assertEquals(0, app.ended)
     }
+
+    /* ---- servizio in tempo reale (PushService.sessionExpired e riavvio) ---- */
+
+    @Test
+    fun serviceExpiryOfTheCurrentSessionEndsIt() {
+        val app = FakeApp(me())
+        val connectedAs = app.guard.snapshot()
+        assertEquals(SessionGuard.Expired.ENDED, app.guard.resolveExpired(connectedAs))
+        assertEquals(1, app.ended)
+    }
+
+    @Test
+    fun serviceExpiryAfterANewLoginReconnectsWithoutEndingIt() {
+        val app = FakeApp(me())
+        val connectedAs = app.guard.snapshot()
+        app.me = me() // nuovo accesso mentre il socket vecchio era aperto
+        assertEquals(SessionGuard.Expired.REPLACED, app.guard.resolveExpired(connectedAs))
+        assertEquals(0, app.ended)
+        assertTrue(app.me != null)
+    }
+
+    @Test
+    fun serviceExpiryAfterALogoutIsQuiet() {
+        val app = FakeApp(me())
+        val connectedAs = app.guard.snapshot()
+        app.me = null // uscita dalle impostazioni
+        assertEquals(SessionGuard.Expired.LOGGED_OUT, app.guard.resolveExpired(connectedAs))
+        assertEquals(0, app.ended)
+    }
+
+    @Test
+    fun newLoginMakesTheServiceConnectionStale() {
+        val app = FakeApp(me())
+        val connectedAs = app.guard.snapshot()
+        assertTrue(app.guard.isCurrent(connectedAs))
+        app.me = me()
+        // È questo che fa ripartire il servizio con la sessione nuova all'avvio successivo.
+        assertFalse(app.guard.isCurrent(connectedAs))
+        // Servizio mai connesso (connectedAs null) con un utente collegato: va connesso.
+        assertFalse(app.guard.isCurrent(null))
+    }
 }
