@@ -46,7 +46,6 @@ import it.citiverse.app.data.ago
 import it.citiverse.app.push.NotifStrings
 import it.citiverse.app.push.NotifText
 import it.citiverse.app.push.Notifier
-import it.citiverse.app.push.PushService
 import it.citiverse.app.ui.LinkRouter
 import it.citiverse.app.ui.Routes
 import it.citiverse.app.ui.appViewModel
@@ -115,9 +114,20 @@ class NotificationsViewModel(private val app: CitiverseApp) : ViewModel() {
         }
     }
 
+    /**
+     * Notifica aperta: la segna letta sul server (PUT /api/v3/notifications/{nid}/read) e,
+     * solo se il server conferma, anche nella lista. Il conteggio delle non lette viene riletto
+     * dal server (niente decremento locale, che si sommerebbe a event:notifications.updateCount).
+     * Gli errori non bloccano l'apertura.
+     */
     fun markOpened(item: NotificationItem) {
-        _ui.update { s -> s.copy(rows = s.rows.map { if (it.item.nid == item.nid) it.copy(item = it.item.copy(read = true)) else it }) }
-        app.unreadCount.update { (it - (if (item.read) 0 else 1)).coerceAtLeast(0) }
+        if (item.read) return
+        viewModelScope.launch {
+            if (!app.markNotificationRead(item.nid)) return@launch
+            _ui.update { s ->
+                s.copy(rows = s.rows.map { if (it.item.nid == item.nid) it.copy(item = it.item.copy(read = true)) else it })
+            }
+        }
     }
 }
 
@@ -197,7 +207,6 @@ private fun NotificationList(
                     NotifRowView(row) {
                         val item = row.item
                         vm.markOpened(item)
-                        PushService.markRead(ctx, item.nid)
                         Notifier.cancel(ctx, item.nid)
                         val route = LinkRouter.forNotification(item.path, item.tid, item.pid)
                         when {

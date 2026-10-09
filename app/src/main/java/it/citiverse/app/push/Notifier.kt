@@ -145,8 +145,19 @@ object Notifier {
             .build()
     }
 
+    fun sessionExpired(ctx: Context) =
+        loginNotice(ctx, "La sessione è scaduta: le notifiche sono in pausa finché non accedi.")
+
+    /** Dopo l'aggiornamento che ha cambiato la gestione dei cookie (vedi PersistentCookieJar). */
+    fun reloginRequired(ctx: Context) =
+        loginNotice(ctx, "Per un aggiornamento di sicurezza devi accedere di nuovo: le notifiche sono in pausa finché non accedi.")
+
+    fun cancelLoginNotice(ctx: Context) {
+        NotificationManagerCompat.from(ctx).cancel(SESSION_ID)
+    }
+
     @SuppressLint("MissingPermission")
-    fun sessionExpired(ctx: Context) {
+    private fun loginNotice(ctx: Context, text: String) {
         if (!canNotify(ctx)) return
         val open = PendingIntent.getActivity(
             ctx, 1,
@@ -156,7 +167,8 @@ object Notifier {
         val n = NotificationCompat.Builder(ctx, CH_OTHER)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Accedi di nuovo a Citiverse")
-            .setContentText("La sessione è scaduta: le notifiche sono in pausa finché non accedi.")
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(open)
             .setAutoCancel(true)
             .build()
@@ -188,17 +200,25 @@ object Notifier {
 
 /** File di lingua delle notifiche, scaricato dal forum e tenuto in cache per una settimana. */
 object NotifStrings {
-    @Volatile private var cache: Map<String, String>? = null
+    /** Traduzioni in memoria e istante in cui sono state lette dal file o dal server. */
+    private class Cached(val map: Map<String, String>, val loadedAt: Long)
+
+    @Volatile private var cache: Cached? = null
     private const val MAX_AGE = 7L * 24 * 3600 * 1000
 
     suspend fun get(ctx: Context, api: NodeBBApi): Map<String, String> {
-        cache?.let { return it }
+        // Anche la copia in memoria scade: il servizio può restare acceso per settimane.
+        cache?.let { if (System.currentTimeMillis() - it.loadedAt < MAX_AGE) return it.map }
         val file = File(ctx.filesDir, "lang_it_notifications.json")
         val fresh = file.exists() && System.currentTimeMillis() - file.lastModified() < MAX_AGE
+        // Età dei testi letti: se il download non riesce e si ripiega sul file vecchio,
+        // la copia in memoria risulta già scaduta e al prossimo giro si riprova a scaricarla.
+        var loadedAt = file.lastModified()
         val text = if (fresh) {
             runCatching { file.readText() }.getOrNull()
         } else {
             runCatching { api.languageFile("notifications").toString().also { file.writeText(it) } }.getOrNull()
+                ?.also { loadedAt = System.currentTimeMillis() }
                 ?: runCatching { file.readText() }.getOrNull()
         }
         val map = text?.let { t ->
@@ -207,7 +227,7 @@ object NotifStrings {
                 o.keys.mapNotNull { k -> o.str(k)?.let { v -> "notifications:$k" to v } }.toMap()
             }.getOrNull()
         } ?: emptyMap()
-        if (map.isNotEmpty()) cache = map
+        if (map.isNotEmpty()) cache = Cached(map, loadedAt)
         return map
     }
 

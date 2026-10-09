@@ -46,8 +46,8 @@ android {
             signingConfig = signingConfigs.getByName("release")
         }
         debug {
+            // Firma debug standard di Android Studio (~/.android/debug.keystore).
             applicationIdSuffix = ".debug"
-            signingConfig = signingConfigs.getByName("release")
         }
     }
 

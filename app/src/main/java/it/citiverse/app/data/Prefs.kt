@@ -111,6 +111,11 @@ class Prefs(context: Context) {
         get() = p.getString("push_status", "") ?: ""
         set(v) = p.edit().putString("push_status", v).apply()
 
+    /** Da mostrare all'apertura: dopo l'aggiornamento della gestione dei cookie serve un nuovo accesso. */
+    var reloginNotice: Boolean
+        get() = p.getBoolean("relogin_notice", false)
+        set(v) = p.edit().putBoolean("relogin_notice", v).apply()
+
     var lastPollAt: Long
         get() = p.getLong("last_poll", 0L)
         set(v) = p.edit().putLong("last_poll", v).apply()

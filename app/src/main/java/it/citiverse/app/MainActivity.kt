@@ -1,5 +1,6 @@
 package it.citiverse.app
 
+import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
@@ -12,7 +13,6 @@ import androidx.lifecycle.lifecycleScope
 import it.citiverse.app.data.ApiException
 import it.citiverse.app.push.Notifier
 import it.citiverse.app.push.PushController
-import it.citiverse.app.push.PushService
 import it.citiverse.app.ui.AppRoot
 import it.citiverse.app.ui.LinkRouter
 import it.citiverse.app.ui.theme.CitiverseTheme
@@ -53,7 +53,7 @@ class MainActivity : ComponentActivity() {
         intent ?: return
         val nid = intent.getStringExtra(Notifier.EXTRA_NID)
         if (nid != null) {
-            PushService.markRead(this, nid)
+            markRead(nid)
             Notifier.cancel(this, nid)
             val route = LinkRouter.forNotification(
                 intent.getStringExtra(Notifier.EXTRA_PATH),
@@ -68,15 +68,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Notifica aperta dal sistema: la segna letta sul server, senza bloccare l'apertura. */
+    private fun markRead(nid: String) {
+        if (app.prefs.me.value == null) return
+        lifecycleScope.launch { app.markNotificationRead(nid) }
+    }
+
     /** All'avvio controlla che la sessione sia ancora valida e riaccende le notifiche. */
     private fun checkSession() {
         lifecycleScope.launch {
-            if (app.prefs.me.value != null) {
+            if (app.prefs.reloginNotice) showReloginNotice()
+            val me = app.session.snapshot()
+            if (me != null) {
                 try {
                     val info = app.api.config()
-                    if (!info.loggedIn) {
-                        app.prefs.setMe(null)
-                        app.resetUserData()
+                    // Sessione valida solo se il server riconosce proprio l'utente salvato.
+                    // Se nel frattempo c'è stato un nuovo accesso, la risposta riguarda quella vecchia.
+                    if ((!info.loggedIn || info.uid != me.uid) && app.session.endIfStill(me)) {
                         Toast.makeText(this@MainActivity, "Sessione scaduta: accedi di nuovo", Toast.LENGTH_LONG).show()
                     }
                 } catch (_: ApiException) {
@@ -87,12 +95,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Una volta sola, dopo l'aggiornamento che ha cancellato i cookie salvati col vecchio formato. */
+    private fun showReloginNotice() {
+        app.prefs.reloginNotice = false
+        Notifier.cancelLoginNotice(this)
+        AlertDialog.Builder(this)
+            .setTitle("Accedi di nuovo")
+            .setMessage(
+                "Abbiamo migliorato il modo in cui l'app conserva l'accesso a Citiverse. " +
+                    "Per sicurezza i dati della sessione precedente sono stati cancellati: " +
+                    "accedi di nuovo per continuare a usare il tuo account e ricevere le notifiche."
+            )
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
     private fun refreshUnread() {
-        if (app.prefs.me.value == null) return
-        lifecycleScope.launch {
-            runCatching { app.api.notifications() }.onSuccess { list ->
-                app.unreadCount.value = list.count { !it.read }
-            }
-        }
+        lifecycleScope.launch { app.refreshUnreadCount() }
     }
 }
