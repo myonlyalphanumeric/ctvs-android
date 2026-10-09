@@ -3,7 +3,6 @@ package it.citiverse.app
 import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
-import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -21,10 +20,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-
-    private companion object {
-        const val TAG = "MainActivity"
-    }
 
     private val pendingRoute = MutableStateFlow<String?>(null)
     private val app get() = application as CitiverseApp
@@ -76,28 +71,20 @@ class MainActivity : ComponentActivity() {
     /** Notifica aperta dal sistema: la segna letta sul server, senza bloccare l'apertura. */
     private fun markRead(nid: String) {
         if (app.prefs.me.value == null) return
-        lifecycleScope.launch {
-            try {
-                app.api.markNotificationRead(nid)
-                refreshUnread()
-            } catch (e: ApiException) {
-                // 404: notifica già cancellata sul server. Negli altri casi resta non letta.
-                Log.w(TAG, "notifica $nid non segnata come letta (${e.code})")
-            }
-        }
+        lifecycleScope.launch { app.markNotificationRead(nid) }
     }
 
     /** All'avvio controlla che la sessione sia ancora valida e riaccende le notifiche. */
     private fun checkSession() {
         lifecycleScope.launch {
             if (app.prefs.reloginNotice) showReloginNotice()
-            val me = app.prefs.me.value
+            val me = app.session.snapshot()
             if (me != null) {
                 try {
                     val info = app.api.config()
                     // Sessione valida solo se il server riconosce proprio l'utente salvato.
-                    if (!info.loggedIn || info.uid != me.uid) {
-                        app.endSession()
+                    // Se nel frattempo c'è stato un nuovo accesso, la risposta riguarda quella vecchia.
+                    if ((!info.loggedIn || info.uid != me.uid) && app.session.endIfStill(me)) {
                         Toast.makeText(this@MainActivity, "Sessione scaduta: accedi di nuovo", Toast.LENGTH_LONG).show()
                     }
                 } catch (_: ApiException) {
@@ -124,11 +111,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun refreshUnread() {
-        if (app.prefs.me.value == null) return
-        lifecycleScope.launch {
-            runCatching { app.api.notifications() }.onSuccess { list ->
-                app.unreadCount.value = list.count { !it.read }
-            }
-        }
+        lifecycleScope.launch { app.refreshUnreadCount() }
     }
 }

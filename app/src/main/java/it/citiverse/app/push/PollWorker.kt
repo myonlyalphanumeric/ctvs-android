@@ -20,7 +20,8 @@ class PollWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
 
     override suspend fun doWork(): Result {
         val app = applicationContext as CitiverseApp
-        if (app.prefs.me.value == null) return Result.success()
+        // Sessione con cui parte il controllo: un 401 vale solo per questa (vedi SessionGuard).
+        val startedAs = app.session.snapshot() ?: return Result.success()
         return try {
             Notifier.ensureChannels(applicationContext)
             val items = app.api.notifications()
@@ -30,9 +31,11 @@ class PollWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
             Result.success()
         } catch (e: ApiException) {
             if (e.code == 401 || e.code == 403) {
-                app.endSession()
-                app.prefs.pushStatus = "Sessione scaduta: accedi di nuovo"
-                Notifier.sessionExpired(applicationContext)
+                // Se nel frattempo l'utente ha fatto un nuovo accesso, la sessione nuova non si tocca.
+                if (app.session.endIfStill(startedAs)) {
+                    app.prefs.pushStatus = "Sessione scaduta: accedi di nuovo"
+                    Notifier.sessionExpired(applicationContext)
+                }
                 Result.success()
             } else {
                 Result.retry()

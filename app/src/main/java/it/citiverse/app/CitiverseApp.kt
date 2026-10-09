@@ -1,14 +1,17 @@
 package it.citiverse.app
 
 import android.app.Application
+import android.util.Log
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
+import it.citiverse.app.data.ApiException
 import it.citiverse.app.data.Category
 import it.citiverse.app.data.NodeBBApi
 import it.citiverse.app.data.PersistentCookieJar
 import it.citiverse.app.data.Prefs
+import it.citiverse.app.data.SessionGuard
 import it.citiverse.app.push.Notifier
 import it.citiverse.app.ui.VoteStore
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,6 +20,10 @@ import kotlinx.coroutines.sync.withLock
 
 /** Punto unico per le dipendenze dell'app (niente framework di DI: l'app è piccola). */
 class CitiverseApp : Application(), ImageLoaderFactory {
+
+    private companion object {
+        const val TAG = "CitiverseApp"
+    }
 
     lateinit var api: NodeBBApi
         private set
@@ -64,6 +71,34 @@ class CitiverseApp : Application(), ImageLoaderFactory {
         api.cookies.clear()
         api.invalidateCsrf()
         resetUserData()
+    }
+
+    /** Per le richieste che possono scoprire una sessione scaduta: vedi [SessionGuard]. */
+    val session by lazy { SessionGuard({ prefs.me.value }, ::endSession) }
+
+    /** Rilegge dal server il numero di notifiche non lette (il pallino nella barra in basso). */
+    suspend fun refreshUnreadCount() {
+        if (prefs.me.value == null) return
+        try {
+            unreadCount.value = api.notifications().count { !it.read }
+        } catch (e: ApiException) {
+            Log.w(TAG, "conteggio notifiche non aggiornato (${e.code})")
+        }
+    }
+
+    /**
+     * Segna letta una notifica sul server e, se riesce, rilegge il conteggio delle non lette.
+     * Gli errori (404 = notifica non più presente) finiscono nel log: la notifica resta non letta.
+     */
+    suspend fun markNotificationRead(nid: String): Boolean {
+        try {
+            api.markNotificationRead(nid)
+        } catch (e: ApiException) {
+            Log.w(TAG, "notifica $nid non segnata come letta (${e.code})")
+            return false
+        }
+        refreshUnreadCount()
+        return true
     }
 
     override fun onCreate() {

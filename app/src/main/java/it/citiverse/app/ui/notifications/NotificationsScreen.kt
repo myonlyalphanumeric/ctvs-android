@@ -1,6 +1,5 @@
 package it.citiverse.app.ui.notifications
 
-import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -41,7 +40,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import it.citiverse.app.CitiverseApp
-import it.citiverse.app.data.ApiException
 import it.citiverse.app.data.BASE_URL
 import it.citiverse.app.data.NotificationItem
 import it.citiverse.app.data.ago
@@ -118,28 +116,17 @@ class NotificationsViewModel(private val app: CitiverseApp) : ViewModel() {
 
     /**
      * Notifica aperta: la segna letta sul server (PUT /api/v3/notifications/{nid}/read) e,
-     * solo se il server conferma, anche nella lista. Gli errori non bloccano l'apertura.
+     * solo se il server conferma, anche nella lista. Il conteggio delle non lette viene riletto
+     * dal server (niente decremento locale, che si sommerebbe a event:notifications.updateCount).
+     * Gli errori non bloccano l'apertura.
      */
     fun markOpened(item: NotificationItem) {
         if (item.read) return
         viewModelScope.launch {
-            try {
-                app.api.markNotificationRead(item.nid)
-            } catch (e: ApiException) {
-                // 404: notifica non più presente sul server; negli altri casi resta non letta.
-                Log.w("Notifications", "notifica ${item.nid} non segnata come letta (${e.code})")
-                return@launch
-            }
-            var changed = false
+            if (!app.markNotificationRead(item.nid)) return@launch
             _ui.update { s ->
-                s.copy(rows = s.rows.map {
-                    if (it.item.nid == item.nid && !it.item.read) {
-                        changed = true
-                        it.copy(item = it.item.copy(read = true))
-                    } else it
-                })
+                s.copy(rows = s.rows.map { if (it.item.nid == item.nid) it.copy(item = it.item.copy(read = true)) else it })
             }
-            if (changed) app.unreadCount.update { (it - 1).coerceAtLeast(0) }
         }
     }
 }

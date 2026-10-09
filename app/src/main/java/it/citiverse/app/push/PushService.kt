@@ -144,7 +144,7 @@ class PushService : Service(), SocketClient.Listener {
     /** Deve girare nello scope del servizio (un thread alla volta). */
     private fun connectNow() {
         lastAttemptAt = SystemClock.elapsedRealtime()
-        connectedAs = app.prefs.me.value
+        connectedAs = app.session.snapshot()
         connectJob?.cancel()
         connectJob = scope.launch {
             if (!hasNetwork()) {
@@ -185,7 +185,7 @@ class PushService : Service(), SocketClient.Listener {
     private fun sessionExpired() {
         // Utente e cookie della vecchia sessione non servono più: si riparte dal login.
         // Solo se nel frattempo non c'è stato un nuovo accesso, che altrimenti verrebbe cancellato.
-        if (app.prefs.me.value === connectedAs) app.endSession()
+        app.session.endIfStill(connectedAs)
         setStatus("Sessione scaduta: accedi di nuovo")
         Notifier.sessionExpired(this)
         stopSelf()
