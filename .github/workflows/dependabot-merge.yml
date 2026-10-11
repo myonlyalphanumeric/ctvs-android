@@ -1,0 +1,115 @@
+name: Unione PR Dependabot
+
+# Unisce da sola le PR di Dependabot con soli aggiornamenti minor o patch, dopo che
+# "Build APK" è passato sull'ultimo commit della PR; poi avvia "Build APK" sul branch
+# principale con il canale alpha, così l'aggiornamento arriva ai tester.
+#
+# Sicurezza: workflow_run gira con il workflow del branch principale, non con quello
+# della PR, e qui non si fa checkout né si esegue codice della PR: si leggono solo
+# dati dall'API di GitHub. Il codice della PR viene compilato da "Build APK" sull'evento
+# pull_request, separato da questo.
+#
+# Va sul branch principale per funzionare: GitHub avvia workflow_run solo da lì.
+
+on:
+  workflow_run:
+    workflows: ['Build APK']
+    types: [completed]
+
+# Nessun permesso di default; il job chiede solo quelli che usa.
+permissions: {}
+
+concurrency:
+  group: dependabot-merge-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    # Filtro rapido sull'evento; i controlli veri (autore, commit, versioni) sono nello step.
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.path == '.github/workflows/android.yml' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      startsWith(github.event.workflow_run.head_branch, 'dependabot/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write       # unire la PR (PUT /pulls/{n}/merge)
+      pull-requests: read   # leggere la PR e i suoi commit
+      actions: write        # avviare "Build APK" con workflow_dispatch
+    steps:
+      - name: Controlla e unisci
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -euo pipefail
+          skip() { echo "::notice::Non unisco: $*"; exit 0; }
+
+          # 1. La PR aperta di quel branch, aperta da Dependabot verso il branch principale.
+          PR_JSON="$(gh api -X GET "repos/$REPO/pulls" -f state=open -f head="$OWNER:$HEAD_BRANCH" --jq '.[0] // empty')"
+          [ -n "$PR_JSON" ] || skip "nessuna PR aperta per il branch $HEAD_BRANCH"
+          PR="$(jq -r '.number' <<<"$PR_JSON")"
+          AUTHOR="$(jq -r '.user.login' <<<"$PR_JSON")"
+          BASE="$(jq -r '.base.ref' <<<"$PR_JSON")"
+          HEAD_REPO="$(jq -r '.head.repo.full_name' <<<"$PR_JSON")"
+          PR_SHA="$(jq -r '.head.sha' <<<"$PR_JSON")"
+          echo "PR #$PR di $AUTHOR, $HEAD_BRANCH → $BASE, ultimo commit $PR_SHA"
+          echo "Build APK passato su $RUN_SHA: $RUN_URL"
+          [ "$AUTHOR" = "dependabot[bot]" ] || skip "PR #$PR aperta da $AUTHOR, non da Dependabot"
+          [ "$HEAD_REPO" = "$REPO" ] || skip "PR #$PR viene da un altro repository ($HEAD_REPO)"
+          [ "$BASE" = "$DEFAULT_BRANCH" ] || skip "PR #$PR punta a $BASE, non al branch principale $DEFAULT_BRANCH"
+
+          # 2. La build passata deve essere sull'ultimo commit della PR.
+          [ "$PR_SHA" = "$RUN_SHA" ] || skip "la build è sul commit $RUN_SHA, ma l'ultimo commit della PR #$PR è $PR_SHA"
+
+          # 3. Tutti i commit sono di Dependabot e verificati da GitHub (nessuna modifica a mano).
+          COMMITS="$(gh api --paginate "repos/$REPO/pulls/$PR/commits" \
+            --jq '.[] | [.sha, (.author.login // "-"), (.commit.verification.verified | tostring)] | @tsv')"
+          echo "$COMMITS"
+          while IFS=$'\t' read -r sha login verified; do
+            [ "$login" = "dependabot[bot]" ] || skip "il commit $sha è di $login, non di Dependabot"
+            [ "$verified" = "true" ] || skip "il commit $sha non ha una firma verificata"
+          done <<<"$COMMITS"
+
+          # 4. Tipo di aggiornamento dai metadati che Dependabot scrive nel messaggio di commit:
+          #    updated-dependencies:
+          #    - dependency-name: ...
+          #      update-type: version-update:semver-minor
+          #    ...
+          #    Ogni dipendenza deve avere update-type minor o patch; se manca (per es. versioni
+          #    a calendario come compose-bom) o è major, non si unisce.
+          META="$(gh api --paginate "repos/$REPO/pulls/$PR/commits" --jq '.[].commit.message' \
+            | awk '/^updated-dependencies:/{f=1; next} /^\.\.\.$/{f=0} f')"
+          echo "$META"
+          DEPS="$(grep -cE '^- dependency-name:' <<<"$META" || true)"
+          TYPES="$(grep -E '^[[:space:]]+update-type:' <<<"$META" | awk '{print $2}' || true)"
+          N_TYPES="$(grep -c . <<<"$TYPES" || true)"
+          [ "$DEPS" -gt 0 ] || skip "nessun metadato updated-dependencies nei commit della PR #$PR"
+          [ "$N_TYPES" -eq "$DEPS" ] || skip "PR #$PR: $DEPS dipendenze ma solo $N_TYPES con update-type"
+          while read -r t; do
+            case "$t" in
+              version-update:semver-minor|version-update:semver-patch) ;;
+              *) skip "PR #$PR contiene un aggiornamento $t" ;;
+            esac
+          done <<<"$TYPES"
+
+          # 5. Unione via API. Con sha GitHub rifiuta l'unione se nel frattempo
+          #    è arrivato un commit nuovo, quindi si unisce proprio ciò che è stato compilato.
+          if ! gh api -X PUT "repos/$REPO/pulls/$PR/merge" -f sha="$RUN_SHA" -f merge_method=merge; then
+            echo "::error::Unione della PR #$PR non riuscita (conflitto, PR cambiata, o modifica a un workflow che GITHUB_TOKEN non può scrivere): uniscila a mano"
+            exit 1
+          fi
+          echo "::notice::PR #$PR unita"
+
+          # 6. Un'unione fatta con GITHUB_TOKEN non avvia il workflow sul push:
+          #    avvio "Build APK" sul branch principale con il canale alpha (test chiuso).
+          gh api -X POST "repos/$REPO/actions/workflows/android.yml/dispatches" \
+            -f ref="$DEFAULT_BRANCH" -f 'inputs[track]=alpha'
+          echo "::notice::Avviato Build APK su $DEFAULT_BRANCH, canale alpha"
