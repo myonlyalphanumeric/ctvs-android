@@ -12,7 +12,7 @@ on:
         description: 'Canale di Google Play: internal = test interno, alpha = test chiuso, production = tutti'
         type: choice
         options: [internal, alpha, production]
-        default: internal
+        default: alpha
 
 permissions:
   contents: write
@@ -83,14 +83,17 @@ jobs:
           name: citiverse-apk-${{ github.run_number }}
           path: dist/*.apk
           if-no-files-found: error
+          # Gli artifact restano 7 giorni: lo spazio del piano gratuito per i repo privati è 500 MB.
+          retention-days: 7
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: citiverse-aab-${{ github.run_number }}
           path: store/*.aab
           if-no-files-found: error
+          retention-days: 7
 
-      # Pubblicazione su Google Play: ogni push sul branch principale va nel test interno;
+      # Pubblicazione su Google Play: ogni push sul branch principale va nel test chiuso (alpha);
       # da Actions → Run workflow si sceglie il canale (test chiuso o produzione).
       # Accesso senza chiavi: GitHub presenta a Google un token firmato che vale solo per questo
       # repository e Google risponde con un permesso che scade dopo un'ora.
@@ -128,7 +131,7 @@ jobs:
           PLAY_ACCESS_TOKEN: ${{ steps.gplay.outputs.access_token }}
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           PACKAGE_NAME: it.citiverse.app
-          TRACK: ${{ github.event_name == 'workflow_dispatch' && inputs.track || 'internal' }}
+          TRACK: ${{ github.event_name == 'workflow_dispatch' && inputs.track || 'alpha' }}
         run: |
           if [ -z "$PLAY_ACCESS_TOKEN" ] && [ -z "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
             echo "::notice::Google Play: pubblicazione saltata, accesso a Google non configurato (variabili GCP_WIF_PROVIDER e GCP_SERVICE_ACCOUNT)"

@@ -1,22 +1,23 @@
-# Aggiornamenti automatici: ogni settimana GitHub apre una PR per le librerie
-# (Gradle) e per le azioni del workflow che hanno una versione nuova.
-# La build di Actions controlla ogni PR prima che venga unita.
+# Aggiornamenti automatici: ogni mese GitHub apre le PR per le librerie (Gradle)
+# e per le azioni dei workflow che hanno una versione nuova.
+# Per ogni ecosistema gli aggiornamenti minor e patch arrivano in un'unica PR;
+# ogni aggiornamento major ha la sua PR, da controllare e unire a mano.
+# La build di Actions controlla ogni PR; dependabot-merge.yml unisce da solo
+# le PR solo minor/patch quando la build è passata.
 version: 2
 updates:
   - package-ecosystem: "gradle"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     open-pull-requests-limit: 5
     groups:
-      # Librerie che vanno aggiornate insieme
-      androidx:
-        patterns: ["androidx.*"]
-      kotlin:
-        patterns: ["org.jetbrains.kotlin.*"]
-      kotlinx:
-        patterns: ["org.jetbrains.kotlinx*"]
+      gradle-minor-patch:
+        update-types: ["minor", "patch"]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+    groups:
+      actions-minor-patch:
+        update-types: ["minor", "patch"]
