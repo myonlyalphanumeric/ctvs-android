@@ -3,6 +3,8 @@ name: Unione PR Dependabot
 # Unisce da sola le PR di Dependabot con soli aggiornamenti minor o patch, dopo che
 # "Build APK" è passato sull'ultimo commit della PR; poi avvia "Build APK" sul branch
 # principale con il canale alpha, così l'aggiornamento arriva ai tester.
+# Le PR che modificano .github/workflows/ (ecosistema github-actions) vengono saltate:
+# vanno controllate e unite a mano.
 #
 # Sicurezza: workflow_run gira con il workflow del branch principale, non con quello
 # della PR, e qui non si fa checkout né si esegue codice della PR: si leggono solo
@@ -78,7 +80,14 @@ jobs:
             [ "$verified" = "true" ] || skip "il commit $sha non ha una firma verificata"
           done <<<"$COMMITS"
 
-          # 4. Tipo di aggiornamento dai metadati che Dependabot scrive nel messaggio di commit:
+          # 4. Niente modifiche ai workflow (PR dell'ecosistema github-actions): vanno unite a mano.
+          WORKFLOW_FILES="$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename' \
+            | grep -E '^\.github/workflows/' || true)"
+          if [ -n "$WORKFLOW_FILES" ]; then
+            skip "PR #$PR modifica file in .github/workflows/ ($(echo $WORKFLOW_FILES)): uniscila a mano dopo averla controllata"
+          fi
+
+          # 5. Tipo di aggiornamento dai metadati che Dependabot scrive nel messaggio di commit:
           #    updated-dependencies:
           #    - dependency-name: ...
           #      update-type: version-update:semver-minor
@@ -100,15 +109,15 @@ jobs:
             esac
           done <<<"$TYPES"
 
-          # 5. Unione via API. Con sha GitHub rifiuta l'unione se nel frattempo
+          # 6. Unione via API. Con sha GitHub rifiuta l'unione se nel frattempo
           #    è arrivato un commit nuovo, quindi si unisce proprio ciò che è stato compilato.
           if ! gh api -X PUT "repos/$REPO/pulls/$PR/merge" -f sha="$RUN_SHA" -f merge_method=merge; then
-            echo "::error::Unione della PR #$PR non riuscita (conflitto, PR cambiata, o modifica a un workflow che GITHUB_TOKEN non può scrivere): uniscila a mano"
+            echo "::error::Unione della PR #$PR non riuscita (conflitto o PR cambiata nel frattempo): uniscila a mano"
             exit 1
           fi
           echo "::notice::PR #$PR unita"
 
-          # 6. Un'unione fatta con GITHUB_TOKEN non avvia il workflow sul push:
+          # 7. Un'unione fatta con GITHUB_TOKEN non avvia il workflow sul push:
           #    avvio "Build APK" sul branch principale con il canale alpha (test chiuso).
           gh api -X POST "repos/$REPO/actions/workflows/android.yml/dispatches" \
             -f ref="$DEFAULT_BRANCH" -f 'inputs[track]=alpha'
