@@ -24,7 +24,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Build delle PR (comprese quelle di Dependabot): solo test e compilazione, con un token in
+  # sola lettura, senza id-token e senza secrets. L'APK è firmato con la chiave di sviluppo.
+  pr:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: Test e compilazione
+        run: ./gradlew --no-daemon --stacktrace testReleaseUnitTest assembleRelease bundleRelease
+
   build:
+    # Push, tag e Run workflow; le PR usano il job "pr" qui sopra.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
