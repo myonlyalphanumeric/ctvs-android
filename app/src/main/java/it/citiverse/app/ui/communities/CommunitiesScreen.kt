@@ -207,7 +207,9 @@ fun CommunitiesScreen(navigate: (String) -> Unit, contentPadding: PaddingValues)
                 )
             }
         }
-        items(shown, key = { "c:" + it.routeId }) { item ->
+        // Chiave sul cid, non su routeId: più categorie-link possono puntare alla stessa comunità
+        // (es. "Basket (poliverso.org)" e "Basket: la comunità…"), e due chiavi uguali visibili insieme chiudono l'app.
+        items(shown, key = { "c:" + it.cat.ref.cid }) { item ->
             CommunityRow(item) { navigate(Routes.category(item.routeId)) }
         }
     }
