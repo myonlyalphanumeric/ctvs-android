@@ -158,9 +158,10 @@ un'email con il motivo: mandamela e la sistemiamo.
 ## Aggiornamenti automatici (da configurare una volta)
 
 Dopo questa configurazione non devi più scaricare né caricare niente:
-- **ogni modifica al codice** (push sul branch principale) arriva da sola nel **Test interno** in pochi minuti;
-- per mandarla **ai tester o a tutti**: GitHub → **Actions** → **Build APK** → **Run workflow** → scegli
-  `alpha` (test chiuso) o `production` → **Run workflow**. Per la produzione Google fa comunque la sua revisione.
+- **ogni modifica al codice** (push sul branch principale) arriva da sola nel **Test aperto** (canale `beta`) in pochi minuti;
+- per scegliere un altro canale: GitHub → **Actions** → **Build APK** → **Run workflow** → scegli
+  `internal` (test interno), `alpha` (test chiuso), `beta` (test aperto, predefinito) o `production` (tutti) →
+  **Run workflow**. Per la produzione Google fa comunque la sua revisione.
 - Note di rilascio: `fastlane/metadata/android/it-IT/changelogs/default.txt`. Per una build specifica si può
   creare `changelogs/<numero build>.txt`.
 

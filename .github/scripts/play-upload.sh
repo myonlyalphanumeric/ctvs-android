@@ -3,7 +3,7 @@
 # senza azioni o librerie di terzi: solo curl, openssl e jq.
 #
 # Uso: play-upload.sh <file.aab> <canale> [nome-versione]
-#   canale: internal (test interno) | alpha (test chiuso) | production
+#   canale: internal (test interno) | alpha (test chiuso) | beta (test aperto) | production
 # Variabili: PLAY_ACCESS_TOKEN (token temporaneo dalla federazione delle identità, consigliato)
 #            oppure PLAY_SERVICE_ACCOUNT_JSON (chiave JSON dell'account di servizio);
 #            PACKAGE_NAME (es. it.citiverse.app), RELEASE_NOTES_FILE (facoltativa)
