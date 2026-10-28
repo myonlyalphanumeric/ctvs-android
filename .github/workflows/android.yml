@@ -9,10 +9,10 @@ on:
   workflow_dispatch:
     inputs:
       track:
-        description: 'Canale di Google Play: internal = test interno, alpha = test chiuso, production = tutti'
+        description: 'Canale di Google Play: internal = test interno, alpha = test chiuso, beta = test aperto, production = tutti'
         type: choice
-        options: [internal, alpha, production]
-        default: alpha
+        options: [internal, alpha, beta, production]
+        default: beta
 
 permissions:
   contents: write
@@ -118,8 +118,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      # Pubblicazione su Google Play: ogni push sul branch principale va nel test chiuso (alpha);
-      # da Actions → Run workflow si sceglie il canale (test chiuso o produzione).
+      # Pubblicazione su Google Play: ogni push sul branch principale va nel test aperto (beta);
+      # da Actions → Run workflow si sceglie il canale (test interno, chiuso, aperto o produzione).
       # Accesso senza chiavi: GitHub presenta a Google un token firmato che vale solo per questo
       # repository e Google risponde con un permesso che scade dopo un'ora.
       # Da Run workflow si pubblica solo se il workflow è avviato dal branch principale.
@@ -156,7 +156,7 @@ jobs:
           PLAY_ACCESS_TOKEN: ${{ steps.gplay.outputs.access_token }}
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           PACKAGE_NAME: it.citiverse.app
-          TRACK: ${{ github.event_name == 'workflow_dispatch' && inputs.track || 'alpha' }}
+          TRACK: ${{ github.event_name == 'workflow_dispatch' && inputs.track || 'beta' }}
         run: |
           if [ -z "$PLAY_ACCESS_TOKEN" ] && [ -z "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
             echo "::notice::Google Play: pubblicazione saltata, accesso a Google non configurato (variabili GCP_WIF_PROVIDER e GCP_SERVICE_ACCOUNT)"

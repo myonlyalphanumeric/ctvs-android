@@ -2,7 +2,7 @@ name: Unione PR Dependabot
 
 # Unisce da sola le PR di Dependabot con soli aggiornamenti minor o patch, dopo che
 # "Build APK" è passato sull'ultimo commit della PR; poi avvia "Build APK" sul branch
-# principale con il canale alpha, così l'aggiornamento arriva ai tester.
+# principale con il canale beta (test aperto), così l'aggiornamento arriva ai tester.
 # Le PR che modificano .github/workflows/ (ecosistema github-actions) vengono saltate:
 # vanno controllate e unite a mano.
 #
@@ -118,7 +118,7 @@ jobs:
           echo "::notice::PR #$PR unita"
 
           # 7. Un'unione fatta con GITHUB_TOKEN non avvia il workflow sul push:
-          #    avvio "Build APK" sul branch principale con il canale alpha (test chiuso).
+          #    avvio "Build APK" sul branch principale con il canale beta (test aperto).
           gh api -X POST "repos/$REPO/actions/workflows/android.yml/dispatches" \
-            -f ref="$DEFAULT_BRANCH" -f 'inputs[track]=alpha'
-          echo "::notice::Avviato Build APK su $DEFAULT_BRANCH, canale alpha"
+            -f ref="$DEFAULT_BRANCH" -f 'inputs[track]=beta'
+          echo "::notice::Avviato Build APK su $DEFAULT_BRANCH, canale beta"
