@@ -43,10 +43,6 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("release")
-            // Simboli di debug delle librerie native (.so) dentro l'AAB, per i report di crash in Play Console.
-            ndk {
-                debugSymbolLevel = "SYMBOL_TABLE"
-            }
         }
         debug {
             // Firma debug standard di Android Studio (~/.android/debug.keystore).
