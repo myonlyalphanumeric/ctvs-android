@@ -7,8 +7,9 @@ App Android nativa (Kotlin + Jetpack Compose) per [citiverse.it](https://citiver
 
 Ogni push viene compilato da GitHub Actions (`.github/workflows/android.yml`):
 
-- **Releases** del repository → release `apk-<nome-branch>` (sostituita a ogni build) → file `citiverse-N.apk`.
+- **Releases** del repository → release `apk-<branch principale>` (sostituita a ogni build) → file `citiverse-N.apk`.
   È il modo più comodo dal telefono: si scarica senza fare login su GitHub.
+  Solo il branch principale (e i tag `v*`) pubblica una release; gli altri branch hanno solo l'artifact qui sotto.
 - In alternativa: scheda **Actions** → ultima esecuzione → artifact `citiverse-apk-N` (zip, serve il login).
 
 Per installarlo: apri il file `.apk` sul telefono e consenti l'installazione da "origini sconosciute" per il browser
